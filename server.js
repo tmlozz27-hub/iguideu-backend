@@ -6,7 +6,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const Joi = require('joi');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt'); // si diera problema en Render, cambiar a bcryptjs y package.json
+const bcrypt = require('bcrypt'); // si diera problema en Render, cambiar a 'bcryptjs' y package.json
 
 // Modelos y middleware
 const auth = require('./middleware/auth');
@@ -92,7 +92,7 @@ app.get('/api/me', auth, async (req, res) => {
   res.json({ ok:true, user: { id: user._id, nombre: user.nombre, email: user.email } });
 });
 
-// ===== Usuarios (demo/aux) =====
+// ===== Usuarios (aux) =====
 app.get('/api/usuarios', async (_req, res) => {
   const users = await Usuario.find().select('-passwordHash').lean();
   res.json(users);
@@ -160,3 +160,82 @@ app.delete('/api/guides/me', auth, async (req, res) => {
 // ===== Bookings =====
 app.post('/api/bookings', auth, async (req, res) => {
   try {
+    const schema = Joi.object({
+      guideId: Joi.string().required(),
+      startAt: Joi.date().iso().required(),
+      endAt:   Joi.date().iso().greater(Joi.ref('startAt')).required(),
+      notes:   Joi.string().allow('').max(1000),
+    });
+    const { value, error } = schema.validate(req.body);
+    if (error) return res.status(400).json({ ok:false, error:error.details[0].message });
+
+    const booking = await Booking.create({
+      guideId: value.guideId,
+      customerId: req.user.id,
+      startAt: value.startAt,
+      endAt: value.endAt,
+      notes: value.notes || '',
+    });
+    res.status(201).json({ ok:true, booking });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+app.get('/api/bookings/me', auth, async (req, res) => {
+  const role = (req.query.role || 'customer').toLowerCase(); // 'customer' | 'guide'
+  const q = role === 'guide' ? { guideId: req.user.id } : { customerId: req.user.id };
+  const items = await Booking.find(q).sort({ createdAt: -1 }).lean();
+  res.json({ ok:true, items });
+});
+
+app.get('/api/bookings/:id', auth, async (req, res) => {
+  const b = await Booking.findById(req.params.id).lean();
+  if (!b) return res.status(404).json({ ok:false, error:'no encontrada' });
+  if (String(b.customerId) !== req.user.id && String(b.guideId) !== req.user.id) {
+    return res.status(403).json({ ok:false, error:'prohibido' });
+  }
+  res.json({ ok:true, booking: b });
+});
+
+app.patch('/api/bookings/:id/status', auth, async (req, res) => {
+  try {
+    const schema = Joi.object({ status: Joi.string().valid('confirmed','rejected','cancelled').required() });
+    const { value, error } = schema.validate(req.body);
+    if (error) return res.status(400).json({ ok:false, error:error.details[0].message });
+
+    const b = await Booking.findById(req.params.id);
+    if (!b) return res.status(404).json({ ok:false, error:'no encontrada' });
+
+    const isGuide = String(b.guideId) === req.user.id;
+    const isCustomer = String(b.customerId) === req.user.id;
+
+    if (isGuide) {
+      if (b.status !== 'pending') return res.status(400).json({ ok:false, error:'solo pending puede cambiar guía' });
+      if (!['confirmed','rejected'].includes(value.status)) {
+        return res.status(400).json({ ok:false, error:'guía solo confirmed|rejected' });
+      }
+    } else if (isCustomer) {
+      if (!['pending','confirmed'].includes(b.status)) {
+        return res.status(400).json({ ok:false, error:'cliente solo cancela pending|confirmed' });
+      }
+      if (value.status !== 'cancelled') {
+        return res.status(400).json({ ok:false, error:'cliente solo cancelled' });
+      }
+    } else {
+      return res.status(403).json({ ok:false, error:'prohibido' });
+    }
+
+    b.status = value.status;
+    await b.save();
+    res.json({ ok:true, booking: b });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+// ===== Start =====
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+});
