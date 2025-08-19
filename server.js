@@ -1,91 +1,32 @@
 // server.js
 require('dotenv').config();
 
-const express   = require('express');
-const mongoose  = require('mongoose');
-const cors      = require('cors');
-const bcrypt    = require('bcrypt');
-const jwt       = require('jsonwebtoken');
-const helmet    = require('helmet');
-const rateLimit = require('express-rate-limit');
+const express  = require('express');
+const cors     = require('cors');
+const mongoose = require('mongoose');
+const jwt      = require('jsonwebtoken');
+const bcrypt   = require('bcrypt');
 
-const auth = require('./middleware/auth');               // ya lo tenés
-const Usuario = require('./models/Usuario');             // ya lo tenés
-const GuideProfile = require('./models/GuideProfile');   // ya lo tenés (si no, dejalo sin usar de momento)
+// ===== Models & middleware =====
+const Usuario      = require('./models/Usuario');
+const GuideProfile = require('./models/GuideProfile');
+const auth         = require('./middleware/auth');
 
 const app = express();
 
-/* =========================
-   Seguridad & Middlewares
-========================= */
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-}));
+// ===== Middlewares =====
+app.use(cors());
+app.use(express.json());
 
-// CORS estricto por lista en env (ALLOWED_ORIGINS="https://tuapp.com,https://otra.com")
-const allowed = (process.env.ALLOWED_ORIGINS || '')
-  .split(',').map(s => s.trim()).filter(Boolean);
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // curl/PowerShell
-    if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
-    cb(new Error('Origen no permitido por CORS'));
-  },
-  credentials: false,
-}));
-
-app.use(express.json({ limit: '512kb' }));
-
-// Rate limits
-const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 50, standardHeaders: true, legacyHeaders: false });
-const apiLimiter  = rateLimit({ windowMs: 60*1000,    max: 120, standardHeaders: true, legacyHeaders: false });
-app.use('/api/auth', authLimiter);
-app.use('/api/', apiLimiter);
-
-/* =========================
-   Utils / Validaciones
-========================= */
-const isObjectId = (s) => mongoose.Types.ObjectId.isValid(String(s));
-const mongoStateLabel = (state) =>
-  (["disconnected","connected","connecting","disconnecting"][state] ?? "unknown");
-
-const signToken = (payload) =>
-  jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-/* =========================
-   Mongo & Modelos
-========================= */
-const uri = process.env.MONGODB_URI;
-if (uri && !/localhost|127\.0\.0\.1/.test(uri)) {
-  mongoose.connect(uri).then(() => console.log('✅ MongoDB conectado'))
-    .catch(err => console.error('❌ Error al conectar MongoDB:', err));
-} else {
-  console.log('⚠️ Sin MONGODB_URI válida (o es localhost). Saltando conexión a MongoDB.');
+// ===== Utils =====
+function mongoStateLabel(state) {
+  return ["disconnected","connected","connecting","disconnecting"][state] ?? "unknown";
+}
+function ensureObjectId(id) {
+  try { return new mongoose.Types.ObjectId(id); } catch { return null; }
 }
 
-// Booking schema (ligero; si prefieres, luego lo separamos a models/Booking.js)
-const bookingSchema = new mongoose.Schema({
-  guide:     { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true, index: true },
-  traveler:  { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true, index: true },
-  date:      { type: Date, required: true, index: true },           // inicio
-  endDate:   { type: Date, required: true, index: true },           // fin (derivado de hours)
-  hours:     { type: Number, required: true, min: 1, max: 12 },
-  status:    { type: String, enum: ['pending','confirmed','cancelled'], default: 'pending', index: true },
-}, { timestamps: true });
-
-// índices útiles
-bookingSchema.index({ guide:1, date:1 });
-bookingSchema.index({ traveler:1, date:1 });
-
-const Booking = mongoose.models.Booking || mongoose.model('Booking', bookingSchema);
-
-/* =========================
-   Rutas básicas
-========================= */
-app.get('/', (_req, res) => {
-  res.send('I GUIDE U backend funcionando');
-});
-
+// ===== Health =====
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
@@ -96,258 +37,320 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-/* =========================
-   Auth (register / login / me)
-========================= */
-app.post('/api/auth/register', async (req, res, next) => {
+// ===== Auth =====
+// Register
+app.post('/api/auth/register', async (req, res) => {
   try {
     const { nombre, email, password } = req.body || {};
-    if (!nombre || String(nombre).trim().length < 2) {
-      return res.status(400).json({ ok:false, error:'nombre requerido (min 2)' });
-    }
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-      return res.status(400).json({ ok:false, error:'email inválido' });
-    }
-    if (!password || String(password).length < 8) {
-      return res.status(400).json({ ok:false, error:'password mínimo 8 caracteres' });
-    }
+    if (!nombre || String(nombre).trim().length < 2) return res.status(400).json({ ok:false, error:'nombre inválido' });
+    if (!email  || !/^\S+@\S+\.\S+$/.test(email))     return res.status(400).json({ ok:false, error:'email inválido' });
+    if (!password || String(password).length < 8)      return res.status(400).json({ ok:false, error:'password mínimo 8' });
 
-    const existing = await Usuario.findOne({ email: String(email).toLowerCase() });
-    if (existing) return res.status(409).json({ ok:false, error:'email ya registrado' });
+    const exists = await Usuario.findOne({ email: String(email).toLowerCase().trim() });
+    if (exists) return res.status(409).json({ ok:false, error:'email ya registrado' });
 
-    const passwordHash = await bcrypt.hash(String(password), 10);
-    const user = await Usuario.create({
-      nombre: String(nombre).trim(),
-      email: String(email).trim().toLowerCase(),
-      passwordHash,
-    });
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await Usuario.create({ nombre: String(nombre).trim(), email: String(email).toLowerCase().trim(), passwordHash });
 
-    const token = signToken({ id: user._id.toString(), email: user.email });
-    res.status(201).json({
-      ok: true,
-      token,
-      user: { id: user._id, nombre: user.nombre, email: user.email }
-    });
-  } catch (e) { next(e); }
+    const token = jwt.sign({ id: user._id.toString(), email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({ ok:true, token, user: { id:user._id, nombre:user.nombre, email:user.email } });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
 });
 
-app.post('/api/auth/login', async (req, res, next) => {
+// Login
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ ok:false, error:'email y password requeridos' });
 
-    const user = await Usuario.findOne({ email: String(email).toLowerCase() });
+    const user = await Usuario.findOne({ email: String(email).toLowerCase().trim() });
     if (!user || !user.passwordHash) return res.status(401).json({ ok:false, error:'credenciales inválidas' });
 
     const ok = await bcrypt.compare(String(password), user.passwordHash);
     if (!ok) return res.status(401).json({ ok:false, error:'credenciales inválidas' });
 
-    const token = signToken({ id: user._id.toString(), email: user.email });
-    res.json({ ok:true, token });
-  } catch (e) { next(e); }
+    const token = jwt.sign({ id: user._id.toString(), email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    res.json({ ok:true, token, user: { id:user._id, nombre:user.nombre, email:user.email } });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
 });
 
-app.get('/api/me', auth, async (req, res, next) => {
+// Me
+app.get('/api/me', auth, async (req, res) => {
   try {
-    const me = await Usuario.findById(req.user.id).lean();
-    if (!me) return res.status(404).json({ ok:false, error:'usuario no encontrado' });
-    res.json({ ok:true, user: { _id: me._id, nombre: me.nombre, email: me.email, createdAt: me.createdAt, updatedAt: me.updatedAt } });
-  } catch (e) { next(e); }
+    const user = await Usuario.findById(req.user.id).select('_id nombre email createdAt updatedAt');
+    res.json({ ok:true, user });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:e.message });
+  }
 });
 
-/* =========================
-   Bookings
-   Política:
-   - Crear: traveler (cualquiera autenticado) crea contra un guideId (otro usuario).
-   - Confirmar: sólo el guía dueño de la reserva -> status 'confirmed'.
-   - Cancelar:
-       * Guía: puede cancelar si aún no comenzó.
-       * Viajero: puede cancelar sólo si faltan >= 24h para comenzar.
-========================= */
+// ===== Booking schema (in-file) =====
+const bookingSchema = new mongoose.Schema({
+  guide:     { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true, index: true },
+  traveler:  { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true, index: true },
+  date:      { type: Date, required: true, index: true }, // inicio
+  endDate:   { type: Date, required: true, index: true }, // fin
+  hours:     { type: Number, required: true, min: 1, max: 24 },
+  status:    { type: String, enum: ['pending','confirmed','cancelled'], default: 'pending', index: true }
+}, { timestamps: true });
 
-// Crear booking
-app.post('/api/bookings', auth, async (req, res, next) => {
+bookingSchema.index({ guide:1, date:1, endDate:1 });
+bookingSchema.index({ traveler:1, date:1 });
+
+const Booking = mongoose.models.Booking || mongoose.model('Booking', bookingSchema);
+
+// ===== Bookings =====
+// Crear booking (viajero crea)
+app.post('/api/bookings', auth, async (req, res) => {
   try {
-    const travelerId = req.user.id;
     const { guideId, date, hours } = req.body || {};
-
-    if (!isObjectId(guideId)) return res.status(400).json({ ok:false, error:'guideId inválido' });
-    if (!hours || !Number.isInteger(hours) || hours < 1 || hours > 12)
-      return res.status(400).json({ ok:false, error:'hours debe ser entero 1..12' });
+    const guideObjId = ensureObjectId(guideId);
+    if (!guideObjId) return res.status(400).json({ ok:false, error:'guideId inválido' });
 
     const start = new Date(date);
     if (isNaN(start.getTime())) return res.status(400).json({ ok:false, error:'date inválida' });
 
-    const now = new Date();
-    if (start.getTime() <= now.getTime() + 15*60*1000) {
-      return res.status(400).json({ ok:false, error:'la reserva debe ser al menos 15 minutos en el futuro' });
-    }
+    const hrs = Number(hours);
+    if (!Number.isFinite(hrs) || hrs < 1 || hrs > 24) return res.status(400).json({ ok:false, error:'hours inválidas (1-24)' });
 
-    // evitar self-booking
-    if (travelerId === String(guideId)) {
-      return res.status(400).json({ ok:false, error:'no podés reservarte a vos mismo' });
-    }
+    const end = new Date(start.getTime() + hrs * 60 * 60 * 1000);
 
-    const end = new Date(start.getTime() + hours * 60 * 60 * 1000);
-
-    // Chequear solapamientos del guía (pending/confirmed)
+    // solapamiento para el guía
     const overlap = await Booking.findOne({
-      guide: guideId,
-      status: { $in: ['pending','confirmed'] },
+      guide: guideObjId,
+      status: { $ne: 'cancelled' },
       $or: [
-        { date: { $lt: end }, endDate: { $gt: start } }, // rango se cruza
-      ],
-    }).lean();
+        { date: { $lt: end }, endDate: { $gt: start } }, // rangos que se cruzan
+      ]
+    });
 
     if (overlap) return res.status(409).json({ ok:false, error:'Horario no disponible para el guía (solapamiento)' });
 
     const booking = await Booking.create({
-      guide: guideId,
-      traveler: travelerId,
+      guide: guideObjId,
+      traveler: ensureObjectId(req.user.id),
       date: start,
       endDate: end,
-      hours,
-      status: 'pending',
+      hours: hrs,
+      status: 'pending'
     });
 
     const populated = await Booking.findById(booking._id)
-      .populate('guide',     'nombre email')
-      .populate('traveler',  'nombre email')
-      .lean();
+      .populate('guide', 'nombre email')
+      .populate('traveler', 'nombre email');
 
     res.status(201).json({ ok:true, booking: populated });
-  } catch (e) { next(e); }
+  } catch (e) {
+    res.status(500).json({ ok:false, error:e.message });
+  }
 });
 
-// Listar mis bookings (si soy guía, las mías como guía; si soy viajero, las mías como viajero)
-app.get('/api/bookings', auth, async (req, res, next) => {
+// Listar mis bookings (guía o viajero)
+app.get('/api/bookings', auth, async (req, res) => {
   try {
-    const me = await Usuario.findById(req.user.id).lean();
-    if (!me) return res.status(404).json({ ok:false, error:'usuario no encontrado' });
-
-    // Heurística: si tengo bookings como guía, muestro esas; sino, como viajero.
-    const asGuideCount = await Booking.countDocuments({ guide: me._id });
-    const filter = asGuideCount > 0 ? { guide: me._id } : { traveler: me._id };
-
-    const bookings = await Booking.find(filter)
-      .sort({ date: 1 })
+    const me = ensureObjectId(req.user.id);
+    const items = await Booking.find({ $or: [ { guide: me }, { traveler: me } ] })
+      .sort({ date: -1 })
       .populate('guide', 'nombre email')
-      .populate('traveler', 'nombre email')
-      .lean();
-
-    res.json({ ok:true, bookings });
-  } catch (e) { next(e); }
+      .populate('traveler', 'nombre email');
+    res.json({ ok:true, bookings: items });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:e.message });
+  }
 });
 
-// Detalle booking por ID (solo guía o viajero involucrados)
-app.get('/api/bookings/:id', auth, async (req, res, next) => {
+// Detalle booking (sólo participantes)
+app.get('/api/bookings/:id', auth, async (req, res) => {
   try {
-    const { id } = req.params;
-    if (!isObjectId(id)) return res.status(400).json({ ok:false, error:'id inválido' });
+    const id = ensureObjectId(req.params.id);
+    if (!id) return res.status(400).json({ ok:false, error:'id inválido' });
 
     const b = await Booking.findById(id)
       .populate('guide', 'nombre email')
-      .populate('traveler', 'nombre email')
-      .lean();
+      .populate('traveler', 'nombre email');
 
     if (!b) return res.status(404).json({ ok:false, error:'booking no encontrado' });
 
-    const uid = String(req.user.id);
-    if (String(b.guide?._id) !== uid && String(b.traveler?._id) !== uid) {
-      return res.status(403).json({ ok:false, error:'no autorizado' });
+    const me = req.user.id;
+    if (b.guide?._id?.toString() !== me && b.traveler?._id?.toString() !== me) {
+      return res.status(403).json({ ok:false, error:'sin permiso' });
     }
 
     res.json({ ok:true, booking: b });
-  } catch (e) { next(e); }
+  } catch (e) {
+    res.status(500).json({ ok:false, error:e.message });
+  }
 });
 
-// Actualizar estado (confirm/cancel) según política
-app.patch('/api/bookings/:id', auth, async (req, res, next) => {
+// Actualizar estado (política):
+// - Guía puede confirmar/cancelar siempre.
+// - Viajero sólo puede cancelar y sólo si faltan >= 24h.
+app.patch('/api/bookings/:id', auth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { status } = req.body || {};
-    if (!isObjectId(id)) return res.status(400).json({ ok:false, error:'id inválido' });
+    const id = ensureObjectId(req.params.id);
+    if (!id) return res.status(400).json({ ok:false, error:'id inválido' });
+
+    let { status } = req.body || {};
+    if (typeof status !== 'string') return res.status(400).json({ ok:false, error:"status debe ser 'confirmed' o 'cancelled'" });
+    status = status.trim().toLowerCase();
     if (!['confirmed','cancelled'].includes(status)) {
       return res.status(400).json({ ok:false, error:"status debe ser 'confirmed' o 'cancelled'" });
     }
 
-    const booking = await Booking.findById(id);
-    if (!booking) return res.status(404).json({ ok:false, error:'booking no encontrado' });
+    const b = await Booking.findById(id);
+    if (!b) return res.status(404).json({ ok:false, error:'booking no encontrado' });
 
-    const uid = String(req.user.id);
-    const isGuide    = String(booking.guide)    === uid;
-    const isTraveler = String(booking.traveler) === uid;
+    const me = req.user.id;
+    const isGuide    = b.guide?.toString() === me;
+    const isTraveler = b.traveler?.toString() === me;
 
-    // No modificar si ya pasó el inicio
-    const now = new Date();
-    if (booking.date <= now) {
-      return res.status(400).json({ ok:false, error:'la reserva ya comenzó o finalizó' });
-    }
+    if (!isGuide && !isTraveler) return res.status(403).json({ ok:false, error:'sin permiso' });
 
-    // Reglas
-    if (status === 'confirmed') {
-      // Sólo el guía confirma
-      if (!isGuide) return res.status(403).json({ ok:false, error:'sólo el guía puede confirmar' });
-    }
-
-    if (status === 'cancelled') {
-      if (isGuide) {
-        // El guía puede cancelar antes del inicio
-        // (ya chequeado arriba que no empezó)
-      } else if (isTraveler) {
-        // Viajero: sólo si faltan >= 24h
-        const hoursLeft = (booking.date - now) / (1000*60*60);
-        if (hoursLeft < 24) {
-          return res.status(403).json({ ok:false, error:'el viajero sólo puede cancelar con ≥24h de anticipación' });
-        }
-      } else {
-        return res.status(403).json({ ok:false, error:'no autorizado' });
+    if (isGuide) {
+      // guía puede confirmar o cancelar
+      b.status = status;
+    } else {
+      // viajero: solo cancelar y con antelación >= 24h
+      if (status !== 'cancelled') {
+        return res.status(403).json({ ok:false, error:'el viajero sólo puede cancelar' });
       }
+      const now = new Date();
+      const diffMs = b.date.getTime() - now.getTime();
+      const hoursLeft = diffMs / (1000 * 60 * 60);
+      if (hoursLeft < 24) {
+        return res.status(403).json({ ok:false, error:'no se puede cancelar con menos de 24h' });
+      }
+      b.status = 'cancelled';
     }
 
-    booking.status = status;
-    await booking.save();
+    await b.save();
 
-    const populated = await Booking.findById(booking._id)
+    const populated = await Booking.findById(b._id)
       .populate('guide', 'nombre email')
-      .populate('traveler', 'nombre email')
-      .lean();
+      .populate('traveler', 'nombre email');
 
     res.json({ ok:true, booking: populated });
-  } catch (e) { next(e); }
+  } catch (e) {
+    res.status(500).json({ ok:false, error:e.message });
+  }
 });
 
-/* =========================
-   /api/dbtest (sanity check)
-========================= */
-app.get('/api/dbtest', async (_req, res, next) => {
+// ===== GuideProfile =====
+// Mi perfil (guía)
+app.get('/api/guides/me', auth, async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({ ok:false, error: "No conectado a MongoDB" });
+    const profile = await GuideProfile.findOne({ user: req.user.id });
+    res.json({ ok: true, profile });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+// Upsert mi perfil
+app.put('/api/guides/me', auth, async (req, res) => {
+  try {
+    const { bio, city, country, languages, pricePerHour } = req.body || {};
+
+    if (pricePerHour != null && (typeof pricePerHour !== 'number' || pricePerHour < 0 || pricePerHour > 10000)) {
+      return res.status(400).json({ ok:false, error: 'pricePerHour inválido' });
     }
-    const col = mongoose.connection.db.collection("__ping");
-    const doc = { at: new Date() };
-    await col.insertOne(doc);
-    const count = await col.countDocuments();
-    res.json({ ok:true, insertedAt: doc.at, totalDocs: count });
-  } catch (e) { next(e); }
+    if (languages && !Array.isArray(languages)) {
+      return res.status(400).json({ ok:false, error: 'languages debe ser array de strings' });
+    }
+
+    const update = { bio, city, country, languages, pricePerHour };
+    const profile = await GuideProfile.findOneAndUpdate(
+      { user: req.user.id },
+      { $set: update },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    res.json({ ok: true, profile });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
 });
 
-/* =========================
-   Handler de errores global
-========================= */
-app.use((err, _req, res, _next) => {
-  const status = err.statusCode || 500;
-  const payload = { ok:false, error: err.message || 'internal_error' };
-  if (process.env.NODE_ENV !== 'production' && err.stack) payload.stack = err.stack;
-  res.status(status).json(payload);
+// Búsqueda pública de guías
+app.get('/api/guides', async (req, res) => {
+  try {
+    const { q, city, country, lang, minPrice, maxPrice, sort = 'price', page = 1, limit = 10 } = req.query;
+
+    const filter = {};
+    if (city)    filter.city = new RegExp(`^${String(city).trim()}`, 'i');
+    if (country) filter.country = new RegExp(`^${String(country).trim()}`, 'i');
+    if (lang)    filter.languages = { $in: [ String(lang).toLowerCase() ] };
+
+    if (minPrice != null || maxPrice != null) {
+      filter.pricePerHour = {};
+      if (minPrice != null) filter.pricePerHour.$gte = Number(minPrice);
+      if (maxPrice != null) filter.pricePerHour.$lte = Number(maxPrice);
+    }
+
+    if (q) {
+      const rx = new RegExp(String(q).trim(), 'i');
+      filter.$or = [{ bio: rx }, { city: rx }, { country: rx }];
+    }
+
+    const sortMap = {
+      'price':   { pricePerHour: 1 },
+      '-price':  { pricePerHour: -1 },
+      'rating':  { ratingAvg: 1, ratingCount: -1 },
+      '-rating': { ratingAvg: -1, ratingCount: -1 },
+      'recent':  { createdAt: 1 },
+      '-recent': { createdAt: -1 },
+    };
+    const sortObj = sortMap[sort] || { pricePerHour: 1 };
+
+    const pageNum  = Math.max(1, parseInt(page));
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
+
+    const [items, total] = await Promise.all([
+      GuideProfile.find(filter)
+        .sort(sortObj)
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .populate('user', 'nombre email'),
+      GuideProfile.countDocuments(filter)
+    ]);
+
+    res.json({ ok: true, total, page: pageNum, pageSize: items.length, items });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
 });
 
-/* =========================
-   Arranque servidor
-========================= */
+// Ver un perfil público por id
+app.get('/api/guides/:id', async (req, res) => {
+  try {
+    const id = ensureObjectId(req.params.id);
+    if (!id) return res.status(400).json({ ok:false, error:'id inválido' });
+
+    const profile = await GuideProfile.findById(id).populate('user', 'nombre email');
+    if (!profile) return res.status(404).json({ ok:false, error:'perfil no encontrado' });
+
+    res.json({ ok:true, profile });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+// ===== Conexión Mongo =====
+const uri = process.env.MONGODB_URI;
+if (uri && !/localhost|127\.0\.0\.1/.test(uri)) {
+  mongoose.connect(uri)
+    .then(() => console.log('✅ MongoDB conectado'))
+    .catch(err => console.error('❌ Error al conectar MongoDB:', err));
+} else {
+  console.log('⚠️ Sin MONGODB_URI válida (o es localhost). Saltando conexión a MongoDB.');
+}
+
+// ===== Start =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
 });
-
