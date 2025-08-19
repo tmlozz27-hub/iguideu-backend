@@ -3,7 +3,7 @@ require('dotenv').config();
 
 const express = require('express');
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');          // si en Render diera drama, podrías usar 'bcryptjs'
+const bcrypt = require('bcrypt');          // si diera problema en Render, podés cambiar a 'bcryptjs'
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 
@@ -124,12 +124,19 @@ app.post('/api/bookings', auth, async (req, res) => {
     if (!guideId || !date) {
       return res.status(400).json({ ok:false, error:'guideId y date son requeridos' });
     }
-    const booking = await Booking.create({
+
+    const created = await Booking.create({
       guide: guideId,
       traveler: req.user.id,
       date: new Date(date),
       status: 'pending',
     });
+
+    // devolver populate para comodidad del cliente
+    const booking = await Booking.findById(created._id)
+      .populate('guide', 'nombre email')
+      .populate('traveler', 'nombre email');
+
     res.status(201).json({ ok:true, booking });
   } catch (err) {
     console.error('BOOKINGS POST', err);
@@ -150,6 +157,64 @@ app.get('/api/bookings', auth, async (req, res) => {
   } catch (err) {
     console.error('BOOKINGS GET', err);
     res.status(500).json({ ok:false, error:'Error listando bookings' });
+  }
+});
+
+// ===== Bookings: detalle de booking (si soy parte) =====
+app.get('/api/bookings/:id', auth, async (req, res) => {
+  try {
+    const b = await Booking.findById(req.params.id)
+      .populate('guide', 'nombre email')
+      .populate('traveler', 'nombre email');
+    if (!b) return res.status(404).json({ ok:false, error:'Booking no encontrado' });
+
+    if (String(b.guide?._id || b.guide) !== req.user.id &&
+        String(b.traveler?._id || b.traveler) !== req.user.id) {
+      return res.status(403).json({ ok:false, error:'Sin permiso' });
+    }
+
+    res.json({ ok:true, booking: b });
+  } catch (err) {
+    console.error('BOOKINGS GET ID', err);
+    res.status(500).json({ ok:false, error:'Error obteniendo booking' });
+  }
+});
+
+// ===== Bookings: cambiar estado =====
+// Reglas:
+// - 'confirmed': solo el guía
+// - 'cancelled': guía o viajero
+app.patch('/api/bookings/:id', auth, async (req, res) => {
+  try {
+    const { status } = req.body; // 'pending' | 'confirmed' | 'cancelled'
+    if (!['pending','confirmed','cancelled'].includes(status)) {
+      return res.status(400).json({ ok:false, error:'status inválido' });
+    }
+
+    const b = await Booking.findById(req.params.id);
+    if (!b) return res.status(404).json({ ok:false, error:'Booking no encontrado' });
+
+    const isGuide = String(b.guide) === req.user.id;
+    const isTraveler = String(b.traveler) === req.user.id;
+
+    if (status === 'confirmed' && !isGuide) {
+      return res.status(403).json({ ok:false, error:'Solo el guía puede confirmar' });
+    }
+    if (status === 'cancelled' && !(isGuide || isTraveler)) {
+      return res.status(403).json({ ok:false, error:'No podés cancelar esta reserva' });
+    }
+
+    b.status = status;
+    await b.save();
+
+    const booking = await Booking.findById(b._id)
+      .populate('guide', 'nombre email')
+      .populate('traveler', 'nombre email');
+
+    res.json({ ok:true, booking });
+  } catch (err) {
+    console.error('BOOKINGS PATCH', err);
+    res.status(500).json({ ok:false, error:'Error actualizando booking' });
   }
 });
 
