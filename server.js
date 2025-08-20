@@ -2,126 +2,51 @@
 require('dotenv').config();
 
 const express = require('express');
-const mongoose = require('mongoose');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const cors = require('cors');
-const bcrypt = require('bcrypt');
+const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 const Joi = require('joi');
+
+const auth = require('./middleware/auth');
+const Usuario = require('./models/Usuario');
+const GuideProfile = require('./models/GuideProfile');
+const Booking = require('./models/Booking');
 
 const app = express();
 
-/* ===========================
-   Seguridad y middlewares
-=========================== */
-app.set('trust proxy', 1); // para rate-limit detrás de proxy (Render)
+// ---------- Middlewares básicos ----------
+app.use(cors());
+app.use(express.json());
 
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
-
-// Ajusta origins si quieres restringir a tu dominio/app móvil
-const ALLOWED_ORIGINS = [
-  'https://iguideu-frontend.onrender.com',
-  'https://studio.apollographql.com', // ejemplo
-  'capacitor://localhost',
-  'ionic://localhost',
-  'http://localhost',
-  'http://localhost:3000',
-];
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // permite curl/Invoke-RestMethod
-    if (ALLOWED_ORIGINS.some(o => origin.startsWith(o))) return cb(null, true);
-    return cb(null, true); // relaja por ahora; endurecer luego
-  },
-  credentials: false,
-}));
-
-app.use(express.json({ limit: '200kb' }));
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 500,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(limiter);
-
-/* ===========================
-   Conexión Mongo
-=========================== */
-const mongoStateLabel = s => (["disconnected", "connected", "connecting", "disconnecting"][s] ?? "unknown");
+// ---------- Conexión MongoDB ----------
 const MONGODB_URI = process.env.MONGODB_URI;
-if (MONGODB_URI && !/localhost|127\.0\.0\.1/.test(MONGODB_URI)) {
-  mongoose.connect(MONGODB_URI)
-    .then(() => console.log('✅ MongoDB conectado'))
-    .catch(err => console.error('❌ Error al conectar MongoDB:', err));
-} else {
-  console.log('⚠️ Sin MONGODB_URI válida (o es localhost). Saltando conexión a MongoDB.');
+if (!MONGODB_URI) {
+  console.error('Falta MONGODB_URI en variables de entorno');
+  process.exit(1);
 }
+mongoose
+  .connect(MONGODB_URI)
+  .then(() => console.log('✅ MongoDB conectado'))
+  .catch((e) => {
+    console.error('❌ Error conectando a MongoDB', e);
+    process.exit(1);
+  });
 
-/* ===========================
-   Modelos
-=========================== */
-const usuarioSchema = new mongoose.Schema({
-  nombre: { type: String, required: true, trim: true, minlength: 2 },
-  email:  { type: String, required: true, trim: true, lowercase: true, unique: true, index: true },
-  passwordHash: { type: String },
-}, { timestamps: true });
-const Usuario = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);
+// ---------- Utilidades ----------
+const isObjectId = (s) => /^[0-9a-fA-F]{24}$/.test(String(s || ''));
 
-const guideProfileSchema = new mongoose.Schema({
-  user:         { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', unique: true, index: true },
-  bio:          { type: String, trim: true, default: '' },
-  pricePerHour: { type: Number, min: 0, default: 0 },
-  languages:    { type: [String], default: [] }, // almacena en minúsculas
-  city:         { type: String, trim: true, default: '' },
-  country:      { type: String, trim: true, default: '' },
-  available:    { type: Boolean, default: true },
-  ratingAvg:    { type: Number, min: 0, max: 5, default: 0 },
-  ratingCount:  { type: Number, min: 0, default: 0 },
-}, { timestamps: true });
-const GuideProfile = mongoose.models.GuideProfile || mongoose.model('GuideProfile', guideProfileSchema);
+const userPublicProjection = 'nombre email';
+const guidePublicProjection = 'user bio languages pricePerHour ratingAvg ratingCount available city country location createdAt updatedAt';
+const bookingPopulate = [
+  { path: 'guide', select: userPublicProjection, model: 'Usuario' },
+  { path: 'traveler', select: userPublicProjection, model: 'Usuario' },
+];
 
-const bookingSchema = new mongoose.Schema({
-  guide:     { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true, index: true },
-  traveler:  { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true, index: true },
-  date:      { type: Date, required: true },
-  endDate:   { type: Date, required: true },
-  hours:     { type: Number, min: 1, max: 12, required: true },
-  status:    { type: String, enum: ['pending', 'confirmed', 'cancelled'], default: 'pending', index: true },
-}, { timestamps: true });
-bookingSchema.index({ guide: 1, date: 1, endDate: 1 });
-const Booking = mongoose.models.Booking || mongoose.model('Booking', bookingSchema);
-
-/* ===========================
-   Helpers
-=========================== */
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me';
-function signToken(u) {
-  return jwt.sign({ id: u._id, email: u.email }, JWT_SECRET, { expiresIn: '7d' });
-}
-function auth(req, res, next) {
-  const h = req.headers.authorization || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (!token) return res.status(401).json({ ok:false, error:'token requerido' });
-  try {
-    req.user = jwt.verify(token, JWT_SECRET); // { id, email }
-    next();
-  } catch {
-    return res.status(401).json({ ok:false, error:'token inválido' });
-  }
-}
-const isGuide = (booking, userId) => booking.guide?.toString() === userId.toString();
-const isTraveler = (booking, userId) => booking.traveler?.toString() === userId.toString();
-const HOURS_24 = 24 * 60 * 60 * 1000;
-
-/* ===========================
-   Rutas base / health
-=========================== */
-app.get('/', (_req, res) => res.send('I GUIDE U backend funcionando'));
+// ---------- Rutas base ----------
+app.get('/', (_req, res) => {
+  res.send('I GUIDE U backend funcionando');
+});
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -129,318 +54,386 @@ app.get('/api/health', (_req, res) => {
     env: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString(),
     hasMongoUri: !!process.env.MONGODB_URI,
-    dbState: mongoStateLabel(mongoose.connection.readyState),
+    dbState:
+      ['disconnected', 'connected', 'connecting', 'disconnecting'][
+        mongoose.connection.readyState
+      ] ?? 'unknown',
   });
 });
 
 app.get('/api/dbtest', async (_req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({ ok: false, error: "No conectado a MongoDB" });
-    }
-    const col = mongoose.connection.db.collection("__ping");
-    const doc = { at: new Date() };
-    await col.insertOne(doc);
-    const count = await col.countDocuments();
-    res.json({ ok: true, insertedAt: doc.at, totalDocs: count });
+    await mongoose.connection.db.admin().ping();
+    res.json({ ok: true, mongo: 'pong', at: new Date().toISOString() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'db error', detail: e.message });
+  }
+});
+
+// ---------- Auth ----------
+const registerSchema = Joi.object({
+  nombre: Joi.string().min(2).max(100).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).max(100).required(),
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { value, error } = registerSchema.validate(req.body);
+    if (error) return res.status(400).json({ ok: false, error: error.message });
+
+    const exists = await Usuario.findOne({ email: value.email.toLowerCase() });
+    if (exists) return res.status(409).json({ ok: false, error: 'email ya registrado' });
+
+    const passwordHash = await bcrypt.hash(value.password, 10);
+    const user = await Usuario.create({
+      nombre: value.nombre,
+      email: value.email.toLowerCase(),
+      passwordHash,
+    });
+
+    const token = jwt.sign(
+      { id: user._id.toString(), email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      ok: true,
+      user: { id: user._id, nombre: user.nombre, email: user.email },
+      token,
+    });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-/* ===========================
-   Auth
-=========================== */
-const registerSchema = Joi.object({
-  nombre: Joi.string().min(2).required(),
-  email: Joi.string().email().required(),
-  password: Joi.string().min(6).required(),
-});
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { value, error } = registerSchema.validate(req.body);
-    if (error) return res.status(400).json({ ok:false, error: error.message });
-
-    const exists = await Usuario.findOne({ email: value.email.toLowerCase() });
-    if (exists) return res.status(409).json({ ok:false, error:'email ya registrado' });
-
-    const passwordHash = await bcrypt.hash(value.password, 10);
-    const user = await Usuario.create({ nombre: value.nombre, email: value.email, passwordHash });
-
-    // crea profile si no existía
-    await GuideProfile.findOneAndUpdate(
-      { user: user._id },
-      { $setOnInsert: { user: user._id } },
-      { upsert: true, new: true }
-    );
-
-    const token = signToken(user);
-    res.status(201).json({ ok:true, token });
-  } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
-  }
-});
-
 const loginSchema = Joi.object({
   email: Joi.string().email().required(),
-  password: Joi.string().required(),
+  password: Joi.string().min(6).max(100).required(),
 });
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { value, error } = loginSchema.validate(req.body);
-    if (error) return res.status(400).json({ ok:false, error: error.message });
+    if (error) return res.status(400).json({ ok: false, error: error.message });
 
     const user = await Usuario.findOne({ email: value.email.toLowerCase() });
-    if (!user || !user.passwordHash) return res.status(401).json({ ok:false, error:'credenciales inválidas' });
-    const ok = await bcrypt.compare(value.password, user.passwordHash);
-    if (!ok) return res.status(401).json({ ok:false, error:'credenciales inválidas' });
+    if (!user || !user.passwordHash)
+      return res.status(401).json({ ok: false, error: 'credenciales inválidas' });
 
-    const token = signToken(user);
-    res.json({ ok:true, token });
+    const ok = await bcrypt.compare(value.password, user.passwordHash);
+    if (!ok) return res.status(401).json({ ok: false, error: 'credenciales inválidas' });
+
+    const token = jwt.sign(
+      { id: user._id.toString(), email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      ok: true,
+      user: { id: user._id, nombre: user.nombre, email: user.email },
+      token,
+    });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
 app.get('/api/me', auth, async (req, res) => {
   try {
-    const user = await Usuario.findById(req.user.id).select('_id nombre email createdAt updatedAt');
-    if (!user) return res.status(404).json({ ok:false, error:'usuario no encontrado' });
-    res.json({ ok:true, user });
+    const me = await Usuario.findById(req.user.id).select(userPublicProjection);
+    if (!me) return res.status(404).json({ ok: false, error: 'usuario no encontrado' });
+    res.json({ ok: true, user: me });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-/* ===========================
-   Guides (me + públicos)
-=========================== */
-const guidePutSchema = Joi.object({
-  bio: Joi.string().allow('').max(1000),
-  pricePerHour: Joi.number().min(0).max(10000),
-  languages: Joi.array().items(Joi.string()).max(20),
-  city: Joi.string().allow('').max(120),
-  country: Joi.string().allow('').max(120),
-  available: Joi.boolean(),
-});
+// ---------- Guides ----------
+
+// GET /api/guides/me
 app.get('/api/guides/me', auth, async (req, res) => {
   try {
-    const guide = await GuideProfile.findOne({ user: req.user.id }).populate('user', 'nombre email');
-    if (!guide) return res.status(404).json({ ok:false, error:'perfil de guía no encontrado' });
-    res.json({ ok:true, guide });
+    const guide = await GuideProfile.findOne({ user: req.user.id })
+      .populate('user', userPublicProjection);
+    if (!guide) return res.status(404).json({ ok: false, error: 'guide profile no encontrado' });
+    res.json({ ok: true, guide });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
-app.put('/api/guides/me', auth, async (req, res) => {
+
+// PUT /api/guides/me  (con saneo de userId legacy)
+app.put('/api/guides/me', auth, async (req, res, next) => {
   try {
-    const { value, error } = guidePutSchema.validate(req.body);
-    if (error) return res.status(400).json({ ok:false, error: error.message });
+    // Limpieza de legacy
+    await GuideProfile.updateMany(
+      { userId: { $exists: true } },
+      { $unset: { userId: 1 } }
+    );
+    await GuideProfile.deleteMany({ $or: [{ user: null }, { user: { $exists: false } }] });
 
-    if (value.languages) value.languages = value.languages.map(s => String(s).toLowerCase());
-    const updated = await GuideProfile.findOneAndUpdate(
+    // Validación simple
+    const schema = Joi.object({
+      bio: Joi.string().max(1000).allow('', null),
+      pricePerHour: Joi.number().min(0).max(10000).allow(null),
+      languages: Joi.array().items(Joi.string()).allow(null),
+      city: Joi.string().max(200).allow('', null),
+      country: Joi.string().max(200).allow('', null),
+      available: Joi.boolean().allow(null),
+    });
+
+    const { value, error } = schema.validate(req.body ?? {});
+    if (error) return res.status(400).json({ ok: false, error: error.message });
+
+    const update = {
+      $set: {
+        user: req.user.id,
+        ...(value.bio !== undefined ? { bio: value.bio } : {}),
+        ...(value.pricePerHour !== undefined ? { pricePerHour: value.pricePerHour } : {}),
+        ...(value.languages !== undefined ? { languages: value.languages } : {}),
+        ...(value.city !== undefined ? { city: value.city } : {}),
+        ...(value.country !== undefined ? { country: value.country } : {}),
+        ...(value.available !== undefined ? { available: value.available } : {}),
+      },
+      $unset: { userId: '' },
+    };
+
+    const guide = await GuideProfile.findOneAndUpdate(
       { user: req.user.id },
-      { $set: value, $setOnInsert: { user: req.user.id } },
-      { upsert: true, new: true }
-    ).populate('user', 'nombre email');
+      update,
+      { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+    ).populate('user', userPublicProjection);
 
-    res.json({ ok:true, guide: updated });
-  } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.json({ ok: true, guide });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({
+        ok: false,
+        error: 'Conflicto de índice único (userId). Reintenta; el saneo ya lo remueve.',
+      });
+    }
+    next(err);
   }
 });
 
-// Públicos: lista y detalle
+// GET /api/guides (búsqueda)
 app.get('/api/guides', async (req, res) => {
   try {
-    const { city, country, language, maxPrice, available } = req.query;
+    const { city, country, language, maxPrice } = req.query;
     const q = {};
-    if (city) q.city = new RegExp(`^${city}$`, 'i');
-    if (country) q.country = new RegExp(`^${country}$`, 'i');
-    if (typeof available !== 'undefined') {
-      if (available === 'true') q.available = true;
-      if (available === 'false') q.available = false;
-    }
-    if (language) q.languages = { $in: [String(language).toLowerCase()] };
+
+    if (city) q.city = city;
+    if (country) q.country = country;
+    if (language) q.languages = { $in: [language] };
     if (maxPrice) q.pricePerHour = { $lte: Number(maxPrice) };
 
-    const guides = await GuideProfile
-      .find(q)
-      .populate('user', 'nombre email')
-      .sort({ ratingAvg: -1, ratingCount: -1 });
+    const guides = await GuideProfile.find(q)
+      .populate('user', userPublicProjection)
+      .select(guidePublicProjection);
 
-    res.json({ ok:true, guides });
+    res.json({ ok: true, guides });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
+// GET /api/guides/:userId  (detalle por usuario guía)
 app.get('/api/guides/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    if (!mongoose.isValidObjectId(userId)) {
-      return res.status(400).json({ ok:false, error:'userId inválido' });
-    }
-    const guide = await GuideProfile.findOne({ user: userId }).populate('user', 'nombre email');
-    if (!guide) return res.status(404).json({ ok:false, error:'Guía no encontrado' });
-    res.json({ ok:true, guide });
+    if (!isObjectId(userId)) return res.status(400).json({ ok: false, error: 'userId inválido' });
+
+    const guide = await GuideProfile.findOne({ user: userId })
+      .populate('user', userPublicProjection);
+
+    if (!guide) return res.status(404).json({ ok: false, error: 'guide profile no encontrado' });
+
+    res.json({ ok: true, guide });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-/* ===========================
-   Bookings
-=========================== */
+// ---------- Bookings ----------
+
 const bookingCreateSchema = Joi.object({
   guideId: Joi.string().required(),
-  date: Joi.date().iso().required(),
+  date: Joi.string().isoDate().required(),
   hours: Joi.number().integer().min(1).max(12).required(),
 });
 
+// solapamiento: (a < B) && (b > A)
+const overlap = (startA, endA, startB, endB) =>
+  startA < endB && endA > startB;
+
+// POST /api/bookings
 app.post('/api/bookings', auth, async (req, res) => {
   try {
     const { value, error } = bookingCreateSchema.validate(req.body);
-    if (error) return res.status(400).json({ ok:false, error: error.message });
+    if (error) return res.status(400).json({ ok: false, error: error.message });
 
-    if (!mongoose.isValidObjectId(value.guideId)) {
-      return res.status(400).json({ ok:false, error:'guideId inválido' });
-    }
-    const guideUser = await Usuario.findById(value.guideId);
-    if (!guideUser) return res.status(404).json({ ok:false, error:'guía no encontrado' });
+    const guideId = value.guideId;
+    if (!isObjectId(guideId)) return res.status(400).json({ ok: false, error: 'guideId inválido' });
+    if (guideId === req.user.id)
+      return res.status(400).json({ ok: false, error: 'no puedes reservarte a ti mismo' });
 
+    // fecha futura
     const start = new Date(value.date);
-    const end = new Date(start.getTime() + value.hours * 60 * 60 * 1000);
+    if (isNaN(start.getTime())) return res.status(400).json({ ok: false, error: 'date inválida' });
+    if (start <= new Date()) return res.status(400).json({ ok: false, error: 'date debe ser futura' });
 
-    // solape para el guía
-    const overlap = await Booking.findOne({
-      guide: value.guideId,
+    const hours = value.hours;
+    const end = new Date(start.getTime() + hours * 60 * 60 * 1000);
+
+    // guía disponible?
+    const guideProfile = await GuideProfile.findOne({ user: guideId });
+    if (!guideProfile || guideProfile.available === false)
+      return res.status(400).json({ ok: false, error: 'guía no disponible' });
+
+    // solapamiento con reservas del guía (no canceladas)
+    const existing = await Booking.find({
+      guide: guideId,
       status: { $ne: 'cancelled' },
-      $or: [
-        { date: { $lt: end }, endDate: { $gt: start } }, // rango que se pisa
-      ]
+      date: { $lt: end },
+      endDate: { $gt: start },
     });
-    if (overlap) return res.status(409).json({ ok:false, error: 'Horario no disponible para el guía (solapamiento)' });
+
+    if (existing.length > 0)
+      return res.status(409).json({ ok: false, error: 'Horario no disponible para el guía (solapamiento)' });
 
     const booking = await Booking.create({
-      guide: guideUser._id,
+      guide: guideId,
       traveler: req.user.id,
       date: start,
       endDate: end,
-      hours: value.hours,
+      hours,
       status: 'pending',
     });
 
-    await booking.populate([
-      { path: 'guide', select: 'nombre email' },
-      { path: 'traveler', select: 'nombre email' }
-    ]);
-
-    res.status(201).json({ ok:true, booking });
+    const populated = await Booking.findById(booking._id).populate(bookingPopulate);
+    res.status(201).json({ ok: true, booking: populated });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// Listado del usuario autenticado (guía: sus reservas recibidas; viajero: sus reservas hechas)
+// GET /api/bookings (mis reservas como guía o viajero)
 app.get('/api/bookings', auth, async (req, res) => {
   try {
-    const userId = req.user.id;
-    const bookings = await Booking.find({
-      $or: [{ guide: userId }, { traveler: userId }]
-    })
-    .sort({ date: 1 })
-    .populate('guide', 'nombre email')
-    .populate('traveler', 'nombre email');
+    const myId = req.user.id;
 
-    res.json({ ok:true, bookings });
+    const bookings = await Booking.find({
+      $or: [{ guide: myId }, { traveler: myId }],
+    })
+      .sort({ date: 1 })
+      .populate(bookingPopulate);
+
+    res.json({ ok: true, bookings });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// Detalle
+// GET /api/bookings/:id (detalle)
 app.get('/api/bookings/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ ok:false, error:'id inválido' });
+    if (!isObjectId(id)) return res.status(400).json({ ok: false, error: 'id inválido' });
 
-    const booking = await Booking.findById(id)
-      .populate('guide', 'nombre email')
-      .populate('traveler', 'nombre email');
-    if (!booking) return res.status(404).json({ ok:false, error:'booking no encontrado' });
+    const booking = await Booking.findById(id).populate(bookingPopulate);
+    if (!booking) return res.status(404).json({ ok: false, error: 'booking no encontrado' });
 
-    // Solo guía o viajero pueden ver
-    if (!isGuide(booking, req.user.id) && !isTraveler(booking, req.user.id)) {
-      return res.status(403).json({ ok:false, error:'sin permiso para ver esta reserva' });
+    // debe ser parte
+    if (
+      booking.guide._id.toString() !== req.user.id &&
+      booking.traveler._id.toString() !== req.user.id
+    ) {
+      return res.status(403).json({ ok: false, error: 'no autorizado' });
     }
 
-    res.json({ ok:true, booking });
+    res.json({ ok: true, booking });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// Cambiar estado (confirm/cancel) con política
+// PATCH /api/bookings/:id (cambiar estado)
 const bookingStatusSchema = Joi.object({
   status: Joi.string().valid('confirmed', 'cancelled').required(),
 });
+
 app.patch('/api/bookings/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ ok:false, error:'id inválido' });
+    if (!isObjectId(id)) return res.status(400).json({ ok: false, error: 'id inválido' });
 
     const { value, error } = bookingStatusSchema.validate(req.body);
-    if (error) return res.status(400).json({ ok:false, error: error.message });
+    if (error) return res.status(400).json({ ok: false, error: error.message });
 
-    let booking = await Booking.findById(id);
-    if (!booking) return res.status(404).json({ ok:false, error:'booking no encontrado' });
+    const booking = await Booking.findById(id);
+    if (!booking) return res.status(404).json({ ok: false, error: 'booking no encontrado' });
 
-    const now = Date.now();
-    const msToStart = new Date(booking.date).getTime() - now;
+    const me = req.user.id;
+    const isGuide = booking.guide.toString() === me;
+    const isTraveler = booking.traveler.toString() === me;
+
+    if (!isGuide && !isTraveler) return res.status(403).json({ ok: false, error: 'no autorizado' });
+    if (booking.status === 'cancelled')
+      return res.status(400).json({ ok: false, error: 'ya está cancelada' });
+
+    const now = new Date();
+    const start = new Date(booking.date);
+    const diffHours = (start.getTime() - now.getTime()) / (1000 * 60 * 60);
 
     if (value.status === 'confirmed') {
-      // Solo guía puede confirmar
-      if (!isGuide(booking, req.user.id)) {
-        return res.status(403).json({ ok:false, error:'sólo el guía puede confirmar' });
-      }
-      // No confirmar si ya cancelado
-      if (booking.status === 'cancelled') {
-        return res.status(400).json({ ok:false, error:'no se puede confirmar una reserva cancelada' });
-      }
+      // Sólo el guía puede confirmar
+      if (!isGuide) return res.status(403).json({ ok: false, error: 'solo el guía puede confirmar' });
+      if (booking.status !== 'pending')
+        return res.status(400).json({ ok: false, error: 'solo se confirman reservas pending' });
+
       booking.status = 'confirmed';
+      await booking.save();
+      const populated = await Booking.findById(id).populate(bookingPopulate);
+      return res.json({ ok: true, booking: populated });
     }
 
     if (value.status === 'cancelled') {
-      if (isGuide(booking, req.user.id)) {
-        // el guía puede cancelar en cualquier momento (negocio: podría limitarse)
+      // El guía puede cancelar siempre; el viajero sólo si faltan >24h
+      if (isGuide) {
         booking.status = 'cancelled';
-      } else if (isTraveler(booking, req.user.id)) {
-        // viajero puede cancelar si faltan al menos 24h
-        if (msToStart < HOURS_24) {
-          return res.status(400).json({ ok:false, error:'viajero sólo puede cancelar con ≥24h de antelación' });
-        }
+        await booking.save();
+        const populated = await Booking.findById(id).populate(bookingPopulate);
+        return res.json({ ok: true, booking: populated });
+      }
+
+      if (isTraveler) {
+        if (diffHours <= 24)
+          return res.status(403).json({ ok: false, error: 'viajero no puede cancelar con menos de 24h' });
+
         booking.status = 'cancelled';
-      } else {
-        return res.status(403).json({ ok:false, error:'no autorizado' });
+        await booking.save();
+        const populated = await Booking.findById(id).populate(bookingPopulate);
+        return res.json({ ok: true, booking: populated });
       }
     }
 
-    await booking.save();
-    booking = await booking
-      .populate('guide', 'nombre email')
-      .populate('traveler', 'nombre email');
-
-    res.json({ ok:true, booking });
+    return res.status(400).json({ ok: false, error: 'operación inválida' });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-/* ===========================
-   Arranque server
-=========================== */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
+// ---------- Manejador de errores ----------
+app.use((err, _req, res, _next) => {
+  console.error('ERROR:', err);
+  res.status(500).json({ ok: false, error: 'internal_error', detail: err.message });
+});
+
+// ---------- Arranque ----------
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
 });
