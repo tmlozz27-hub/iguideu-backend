@@ -1,83 +1,76 @@
 // src/controllers/availability.controller.js
 const Availability = require('../models/Availability');
+const Booking = require('../models/Booking');
 
-// Crea un bloque de disponibilidad para el guía autenticado
-exports.create = async (req, res) => {
+function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+  // [aStart,aEnd) solapa [bStart,bEnd)?
+  return (aStart < bEnd) && (bStart < aEnd);
+}
+
+exports.createBlock = async (req, res) => {
   try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
+    const guideUserId = req.user?._id;
+    if (!guideUserId) return res.status(401).json({ error: 'No autenticado' });
 
-    const { startAt, endAt } = req.body;
-    if (!startAt || !endAt) return res.status(400).json({ error: 'Faltan startAt y/o endAt' });
+    const { startAt, endAt } = req.body || {};
+    if (!startAt || !endAt) return res.status(400).json({ error: 'Faltan startAt/endAt' });
 
     const start = new Date(startAt);
-    const end   = new Date(endAt);
-    if (isNaN(start) || isNaN(end)) return res.status(400).json({ error: 'Fechas inválidas' });
-    if (start >= end) return res.status(400).json({ error: 'startAt debe ser menor a endAt' });
+    const end = new Date(endAt);
+    if (!(start < end)) return res.status(400).json({ error: 'Rango inválido' });
 
-    // No permitir solapamientos con bloques existentes del mismo guía
-    const overlap = await Availability.findOne({
-      guideUserId: req.userId,
-      $or: [
-        { startAt: { $lt: end }, endAt: { $gt: start } }, // rango se cruza
-      ],
-    });
+    // evitar solapes con otros bloques del mismo guía
+    const existing = await Availability.find({ guideUserId });
+    const solapa = existing.some(b => rangesOverlap(start, end, b.startAt, b.endAt));
+    if (solapa) return res.status(409).json({ error: 'Rango solapado con otro bloque' });
 
-    if (overlap) return res.status(409).json({ error: 'Rango solapado con otro bloque' });
-
-    const block = await Availability.create({
-      guideUserId: req.userId,
-      startAt: start,
-      endAt: end,
-    });
-
-    return res.status(201).json({ block });
+    const block = await Availability.create({ guideUserId, startAt: start, endAt: end });
+    return res.json({ block });
   } catch (err) {
-    console.error('availability.create error:', err);
+    console.error('createBlock error', err);
     return res.status(500).json({ error: 'No se pudo crear disponibilidad' });
   }
 };
 
-// Lista MIS bloques (guía autenticado)
-exports.mine = async (req, res) => {
+exports.myBlocks = async (req, res) => {
   try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
-    const now = new Date();
-    const blocks = await Availability.find({ guideUserId: req.userId, endAt: { $gte: now } })
-      .sort({ startAt: 1 })
-      .limit(200);
+    const guideUserId = req.user?._id;
+    if (!guideUserId) return res.status(401).json({ error: 'No autenticado' });
+    const blocks = await Availability.find({ guideUserId }).sort({ startAt: 1 });
     return res.json({ blocks });
   } catch (err) {
-    console.error('availability.mine error:', err);
-    return res.status(500).json({ error: 'No se pudo listar disponibilidad' });
+    console.error('myBlocks error', err);
+    return res.status(500).json({ error: 'No se pudo listar' });
   }
 };
 
-// Lista bloques públicos de un guía por su userId
-exports.listByGuide = async (req, res) => {
+exports.deleteBlock = async (req, res) => {
   try {
-    const { guideUserId } = req.params;
-    if (!guideUserId) return res.status(400).json({ error: 'Falta guideUserId' });
-    const now = new Date();
-    const blocks = await Availability.find({ guideUserId, endAt: { $gte: now } })
-      .sort({ startAt: 1 })
-      .limit(200);
-    return res.json({ blocks });
-  } catch (err) {
-    console.error('availability.listByGuide error:', err);
-    return res.status(500).json({ error: 'No se pudo listar disponibilidad del guía' });
-  }
-};
-
-// Eliminar un bloque MÍO por _id
-exports.remove = async (req, res) => {
-  try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
+    const guideUserId = req.user?._id;
+    if (!guideUserId) return res.status(401).json({ error: 'No autenticado' });
     const { id } = req.params;
-    const del = await Availability.findOneAndDelete({ _id: id, guideUserId: req.userId });
-    if (!del) return res.status(404).json({ error: 'Bloque no encontrado' });
+
+    const block = await Availability.findOne({ _id: id, guideUserId });
+    if (!block) return res.status(404).json({ error: 'Bloque no encontrado' });
+
+    // *** NUEVO: chequear bookings pendientes/confirmados dentro del rango ***
+    const activeStatuses = ['pending', 'confirmed'];
+    const overlapping = await Booking.findOne({
+      guide: guideUserId,
+      status: { $in: activeStatuses },
+      // solape de rangos: booking.startAt < block.endAt && block.startAt < booking.endAt
+      startAt: { $lt: block.endAt },
+      endAt: { $gt: block.startAt },
+    }).lean();
+
+    if (overlapping) {
+      return res.status(409).json({ error: 'No se puede borrar: hay reservas pendientes/confirmadas dentro del rango' });
+    }
+
+    await Availability.deleteOne({ _id: id });
     return res.json({ ok: true });
   } catch (err) {
-    console.error('availability.remove error:', err);
+    console.error('deleteBlock error', err);
     return res.status(500).json({ error: 'No se pudo eliminar el bloque' });
   }
 };
