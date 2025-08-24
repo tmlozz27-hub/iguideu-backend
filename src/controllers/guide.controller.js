@@ -4,26 +4,36 @@ const User = require('../models/User');
 function normalizeLanguages(input) {
   if (!input) return [];
   const arr = Array.isArray(input) ? input : String(input).split(',');
-  return arr
-    .map(s => String(s).trim().toLowerCase().slice(0, 10))
-    .filter(Boolean);
+  return arr.map(s => String(s).trim().toLowerCase().slice(0, 10)).filter(Boolean);
+}
+
+function errorPayload(err, fallbackMsg) {
+  return {
+    error: fallbackMsg,
+    detail: err?.message || String(err),
+    code: err?.code,
+    name: err?.name,
+    kind: err?.kind
+  };
 }
 
 // GET /api/guides/me
 exports.getMe = async (req, res) => {
   try {
+    if (!req.userId) throw new Error('req.userId ausente');
     const profile = await GuideProfile.findOne({ userId: req.userId }).lean();
     if (!profile) return res.status(404).json({ error: 'Perfil de guía no encontrado' });
     return res.json({ profile });
   } catch (err) {
     console.error('getMe error:', err);
-    return res.status(500).json({ error: 'Error obteniendo perfil de guía', detail: err.message });
+    return res.status(500).json(errorPayload(err, 'Error obteniendo perfil de guía'));
   }
 };
 
 // PUT /api/guides/me
 exports.upsertMe = async (req, res) => {
   try {
+    if (!req.userId) throw new Error('req.userId ausente');
     const {
       pricePerHourUSD,
       languages,
@@ -59,7 +69,7 @@ exports.upsertMe = async (req, res) => {
     return res.json({ profile });
   } catch (err) {
     console.error('upsertMe error:', err);
-    return res.status(500).json({ error: 'Error guardando perfil de guía', detail: err.message });
+    return res.status(500).json(errorPayload(err, 'Error guardando perfil de guía'));
   }
 };
 
@@ -89,7 +99,6 @@ exports.listPublic = async (req, res) => {
       .limit(limitNum)
       .lean();
 
-    // Adjuntar datos básicos del usuario
     const userIds = items.map(i => i.userId);
     const users = await User.find({ _id: { $in: userIds } }, { name: 1, email: 1 }).lean();
     const userMap = Object.fromEntries(users.map(u => [String(u._id), u]));
@@ -101,15 +110,10 @@ exports.listPublic = async (req, res) => {
 
     const total = await GuideProfile.countDocuments(filter);
 
-    return res.json({
-      page: pageNum,
-      limit: limitNum,
-      total,
-      items: itemsWithUser
-    });
+    return res.json({ page: pageNum, limit: limitNum, total, items: itemsWithUser });
   } catch (err) {
     console.error('listPublic error:', err);
-    return res.status(500).json({ error: 'Error listando guías', detail: err.message });
+    return res.status(500).json(errorPayload(err, 'Error listando guías'));
   }
 };
 
