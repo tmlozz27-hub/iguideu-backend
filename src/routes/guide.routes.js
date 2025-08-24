@@ -1,18 +1,14 @@
 const express = require('express');
-const auth = require('../middleware/auth');
-const {
-  getMe, upsertMe,
-  publicList, publicGet
-} = require('../controllers/guide.controller');
-
 const router = express.Router();
 
-// Públicos
-router.get('/', publicList);        // lista con filtros
-router.get('/:userId', publicGet);  // detalle por userId
+const auth = require('../middleware/auth');
+const ctrl  = require('../controllers/guide.controller');
 
-// Autenticado (propio perfil guía)
-router.get('/me', auth, getMe);
-router.put('/me', auth, upsertMe);
+// Perfil del guía autenticado
+router.get('/me', auth, ctrl.getMe);
+router.put('/me', auth, ctrl.upsertMe);
+
+// Listado público de guías
+router.get('/', ctrl.listPublic);
 
 module.exports = router;

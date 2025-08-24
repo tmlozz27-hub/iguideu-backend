@@ -1,82 +1,115 @@
+const GuideProfile = require('../models/GuideProfile');
+const User = require('../models/User');
+
+function normalizeLanguages(input) {
+  if (!input) return [];
+  const arr = Array.isArray(input) ? input : String(input).split(',');
+  return arr
+    .map(s => String(s).trim().toLowerCase().slice(0, 10))
+    .filter(Boolean);
+}
+
 // GET /api/guides/me
-exports.getMyProfile = async (req, res) => {
+exports.getMe = async (req, res) => {
   try {
-    const userId = req.userId;
-    if (!userId) return res.status(401).json({ error: 'No autenticado' });
-
-    const profile = await GuideProfile.findOne({ userId })
-      .populate('userId', 'name email')
-      .lean();
-
+    const profile = await GuideProfile.findOne({ userId: req.userId }).lean();
     if (!profile) return res.status(404).json({ error: 'Perfil de guía no encontrado' });
-
     return res.json({ profile });
   } catch (err) {
-    console.error('getMyProfile error:', err);
-    return res.status(500).json({
-      error: 'Error obteniendo perfil de guía',
-      detail: err?.message || String(err),
-      code: err?.code || null,
-      kind: err?.kind || null
-    });
+    console.error('getMe error:', err);
+    return res.status(500).json({ error: 'Error obteniendo perfil de guía', detail: err.message });
   }
 };
 
-// PUT /api/guides/me (upsert)
-exports.upsertMyProfile = async (req, res) => {
+// PUT /api/guides/me
+exports.upsertMe = async (req, res) => {
   try {
-    const userId = req.userId;
-    if (!userId) return res.status(401).json({ error: 'No autenticado' });
-
     const {
-      bio,
-      languages,
       pricePerHourUSD,
+      languages,
+      bio,
       country,
       city,
       avatarUrl,
-      isActive,
-    } = req.body || {};
+      isActive
+    } = req.body;
 
-    const normalizeLanguages = input => {
-      if (!input) return [];
-      if (Array.isArray(input)) return input.map(s => String(s).trim().toLowerCase()).filter(Boolean);
-      return String(input).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-    };
-
-    const langs = normalizeLanguages(languages);
-    const existing = await GuideProfile.findOne({ userId }).lean();
-    if (!existing && (pricePerHourUSD == null || Number(pricePerHourUSD) <= 0)) {
+    if (pricePerHourUSD == null) {
       return res.status(400).json({ error: 'Falta pricePerHourUSD' });
     }
 
     const update = {
-      ...(bio != null ? { bio: String(bio) } : {}),
-      ...(langs ? { languages: langs } : {}),
-      ...(pricePerHourUSD != null ? { pricePerHourUSD: Number(pricePerHourUSD) } : {}),
-      ...(country != null ? { country: String(country).toUpperCase() } : {}),
-      ...(city != null ? { city: String(city) } : {}),
-      ...(avatarUrl != null ? { avatarUrl: String(avatarUrl) } : {}),
-      ...(typeof isActive === 'boolean' ? { isActive } : {}),
+      userId: req.userId,
+      pricePerHourUSD,
     };
 
+    if (languages !== undefined) update.languages = normalizeLanguages(languages);
+    if (bio !== undefined)       update.bio = bio;
+    if (country !== undefined)   update.country = country;
+    if (city !== undefined)      update.city = city;
+    if (avatarUrl !== undefined) update.avatarUrl = avatarUrl;
+    if (isActive !== undefined)  update.isActive = !!isActive;
+
     const profile = await GuideProfile.findOneAndUpdate(
-      { userId },
-      { $set: update, $setOnInsert: { userId } },
+      { userId: req.userId },
+      { $set: update },
       { new: true, upsert: true, runValidators: true }
-    ).populate('userId', 'name email');
+    );
 
     return res.json({ profile });
   } catch (err) {
-    console.error('upsertMyProfile error:', err);
-    if (err && err.code === 11000) {
-      return res.status(409).json({ error: 'Duplicado de perfil de guía', detail: err.message });
-    }
-    return res.status(500).json({
-      error: 'Error guardando perfil de guía',
-      detail: err?.message || String(err),
-      code: err?.code || null,
-      kind: err?.kind || null
-    });
+    console.error('upsertMe error:', err);
+    return res.status(500).json({ error: 'Error guardando perfil de guía', detail: err.message });
   }
 };
+
+// GET /api/guides (listado público)
+exports.listPublic = async (req, res) => {
+  try {
+    const { country, city, q, sort = 'recent', page = 1, limit = 10 } = req.query;
+
+    const filter = { isActive: true };
+    if (country) filter.country = country;
+    if (city)    filter.city    = city;
+    if (q)       filter.bio     = { $regex: q, $options: 'i' };
+
+    const sortMap = {
+      price:  { pricePerHourUSD: 1 },
+      recent: { createdAt: -1 },
+      rating: { ratingAvg: -1 }
+    };
+
+    const pageNum  = Math.max(parseInt(page)  || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit) || 10, 1), 100);
+    const skip     = (pageNum - 1) * limitNum;
+
+    const items = await GuideProfile.find(filter)
+      .sort(sortMap[sort] || sortMap.recent)
+      .skip(skip)
+      .limit(limitNum)
+      .lean();
+
+    // Adjuntar datos básicos del usuario
+    const userIds = items.map(i => i.userId);
+    const users = await User.find({ _id: { $in: userIds } }, { name: 1, email: 1 }).lean();
+    const userMap = Object.fromEntries(users.map(u => [String(u._id), u]));
+
+    const itemsWithUser = items.map(i => ({
+      ...i,
+      user: userMap[String(i.userId)] || null
+    }));
+
+    const total = await GuideProfile.countDocuments(filter);
+
+    return res.json({
+      page: pageNum,
+      limit: limitNum,
+      total,
+      items: itemsWithUser
+    });
+  } catch (err) {
+    console.error('listPublic error:', err);
+    return res.status(500).json({ error: 'Error listando guías', detail: err.message });
+  }
+};
+
