@@ -1,186 +1,164 @@
+// src/controllers/booking.controller.js
 const Booking = require('../models/Booking');
 const Availability = require('../models/Availability');
+const GuideProfile = require('../models/GuideProfile');
 
-// Crear reserva (traveler)
+/**
+ * Crear una reserva (viajero)
+ * Reglas:
+ * - Debe existir disponibilidad del guía que cubra totalmente el rango.
+ * - status inicial: "pending"
+ */
 exports.create = async (req, res) => {
   try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
     const { guideId, startAt, endAt, priceUSD } = req.body;
 
     if (!guideId || !startAt || !endAt || !priceUSD) {
-      return res.status(400).json({ error: 'Datos incompletos' });
+      return res.status(400).json({ error: 'Faltan campos requeridos' });
     }
 
-    // Verificar disponibilidad
+    // El traveler es el user autenticado
+    const travelerId = req.userId;
+
+    // Debe existir un GuideProfile activo de ese guideId (userId del guía)
+    const gp = await GuideProfile.findOne({ userId: guideId, isActive: true });
+    if (!gp) {
+      return res.status(400).json({ error: 'Guía no disponible' });
+    }
+
+    // Verificar que el rango esté completamente cubierto por una disponibilidad
+    const start = new Date(startAt);
+    const end = new Date(endAt);
+
+    if (!(start instanceof Date) || isNaN(start) || !(end instanceof Date) || isNaN(end) || end <= start) {
+      return res.status(400).json({ error: 'Rango de fechas inválido' });
+    }
+
     const block = await Availability.findOne({
       guideUserId: guideId,
-      startAt: { $lte: new Date(startAt) },
-      endAt: { $gte: new Date(endAt) }
+      startAt: { $lte: start },
+      endAt: { $gte: end },
     });
+
     if (!block) {
       return res.status(400).json({ error: 'El rango no cae dentro de una disponibilidad del guía' });
     }
 
+    const commissionPct = Number(process.env.BOOKING_COMMISSION_PCT || 10);
+
     const booking = await Booking.create({
-      traveler: req.userId,
+      traveler: travelerId,
       guide: guideId,
-      startAt,
-      endAt,
+      startAt: start,
+      endAt: end,
       priceUSD,
-      commissionPct: 10,
-      status: 'pending'
+      commissionPct,
+      status: 'pending',
     });
 
     return res.status(201).json({ booking });
   } catch (err) {
-    console.error('booking.create error:', err);
-    return res.status(500).json({ error: 'Error creando reserva' });
+    console.error('create booking error:', err);
+    return res.status(500).json({ error: 'No se pudo crear la reserva' });
   }
 };
 
-// Mis reservas (traveler)
+/**
+ * Mis reservas (como viajero)
+ */
 exports.mine = async (req, res) => {
   try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
-    const bookings = await Booking.find({ traveler: req.userId }).sort({ startAt: -1 }).limit(200);
+    const userId = req.userId;
+    const bookings = await Booking.find({ traveler: userId }).sort({ createdAt: -1 });
     return res.json({ bookings });
   } catch (err) {
-    console.error('booking.mine error:', err);
-    return res.status(500).json({ error: 'No se pudo listar mis reservas' });
+    console.error('mine bookings error:', err);
+    return res.status(500).json({ error: 'No se pudieron listar las reservas' });
   }
 };
 
-// Reservas de un guía (público)
-exports.listByGuide = async (req, res) => {
+/**
+ * Reservas recibidas (como guía)
+ */
+exports.asGuide = async (req, res) => {
   try {
-    const guideId = req.params.guideId;
-    const bookings = await Booking.find({ guide: guideId }).sort({ startAt: -1 }).limit(200);
+    const guideUserId = req.userId;
+    const bookings = await Booking.find({ guide: guideUserId }).sort({ createdAt: -1 });
     return res.json({ bookings });
   } catch (err) {
-    console.error('booking.listByGuide error:', err);
-    return res.status(500).json({ error: 'No se pudo listar reservas del guía' });
+    console.error('asGuide bookings error:', err);
+    return res.status(500).json({ error: 'No se pudieron listar las reservas del guía' });
   }
 };
 
-// Cancelar mi reserva (traveler)
-exports.cancelMine = async (req, res) => {
+/**
+ * Confirmar una reserva (solo guía dueño de la reserva)
+ * Transición: pending -> confirmed
+ */
+exports.confirm = async (req, res) => {
   try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
-    const { id } = req.params;
-    const booking = await Booking.findOneAndUpdate(
-      { _id: id, traveler: req.userId, status: { $in: ['pending','confirmed'] } },
-      { $set: { status: 'cancelled' } },
-      { new: true }
-    );
-    if (!booking) return res.status(404).json({ error: 'Reserva no encontrada o no cancelable' });
-    return res.json({ booking });
-  } catch (err) {
-    console.error('booking.cancelMine error:', err);
-    return res.status(500).json({ error: 'No se pudo cancelar reserva' });
-  }
-};
-
-// === Acciones de estado ===
-
-// Listar reservas donde soy guía
-exports.mineAsGuide = async (req, res) => {
-  try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
-    const bookings = await Booking.find({ guide: req.userId })
-      .sort({ startAt: -1 })
-      .limit(200);
-    return res.json({ bookings });
-  } catch (err) {
-    console.error('booking.mineAsGuide error:', err);
-    return res.status(500).json({ error: 'No se pudo listar mis reservas como guía' });
-  }
-};
-
-// El guía confirma una reserva
-exports.confirmAsGuide = async (req, res) => {
-  try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
+    const userId = req.userId; // guía autenticado
     const { id } = req.params;
 
-    const updated = await Booking.findOneAndUpdate(
-      { _id: id, guide: req.userId, status: 'pending' },
-      { $set: { status: 'confirmed' } },
-      { new: true }
-    );
-    if (!updated) return res.status(404).json({ error: 'Reserva no encontrada o no confirmable' });
-    return res.json({ booking: updated });
-  } catch (err) {
-    console.error('booking.confirmAsGuide error:', err);
-    return res.status(500).json({ error: 'No se pudo confirmar' });
-  }
-};
+    const booking = await Booking.findById(id);
+    if (!booking) return res.status(404).json({ error: 'Reserva no encontrada' });
 
-// Marcar como pagada (solo dev/QA)
-exports.markPaidDev = async (req, res) => {
-  try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
-    const { id } = req.params;
-
-    const updated = await Booking.findOneAndUpdate(
-      { _id: id, guide: req.userId, status: 'confirmed' },
-      { $set: { status: 'paid' } },
-      { new: true }
-    );
-    if (!updated) return res.status(404).json({ error: 'Reserva no encontrada o no pagable' });
-    return res.json({ booking: updated });
-  } catch (err) {
-    console.error('booking.markPaidDev error:', err);
-    return res.status(500).json({ error: 'No se pudo marcar como pagada' });
-  }
-};
-
-// Completar servicio (paid -> completed)
-exports.completeAsGuide = async (req, res) => {
-  try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
-    const { id } = req.params;
-
-    const updated = await Booking.findOneAndUpdate(
-      { _id: id, guide: req.userId, status: 'paid' },
-      { $set: { status: 'completed' } },
-      { new: true }
-    );
-    if (!updated) return res.status(404).json({ error: 'Reserva no encontrada o no completable' });
-    return res.json({ booking: updated });
-  } catch (err) {
-    console.error('booking.completeAsGuide error:', err);
-    return res.status(500).json({ error: 'No se pudo completar' });
-  }
-};
-
-// Resumen de comisiones (ganancias guía)
-exports.myEarnings = async (req, res) => {
-  try {
-    if (!req.userId) return res.status(401).json({ error: 'No autenticado' });
-
-    const rows = await Booking.find({ guide: req.userId, status: { $in: ['paid','completed'] } })
-      .select('priceUSD commissionPct startAt endAt status')
-      .lean();
-
-    let gross = 0, commission = 0, net = 0;
-    for (const r of rows) {
-      const p = Number(r.priceUSD) || 0;
-      const pct = Number(r.commissionPct) || 0;
-      const com = p * (pct / 100);
-      gross += p;
-      commission += com;
-      net += (p - com);
+    if (String(booking.guide) !== String(userId)) {
+      return res.status(403).json({ error: 'No autorizado: no sos el guía de esta reserva' });
     }
 
-    return res.json({
-      grossUSD: Number(gross.toFixed(2)),
-      commissionUSD: Number(commission.toFixed(2)),
-      netUSD: Number(net.toFixed(2)),
-      count: rows.length,
-      items: rows,
-    });
+    if (booking.status !== 'pending') {
+      return res.status(400).json({ error: `Solo se puede confirmar si está 'pending' (actual: ${booking.status})` });
+    }
+
+    booking.status = 'confirmed';
+    await booking.save();
+
+    return res.json({ booking });
   } catch (err) {
-    console.error('booking.myEarnings error:', err);
-    return res.status(500).json({ error: 'No se pudo calcular ganancias' });
+    console.error('confirm booking error:', err);
+    return res.status(500).json({ error: 'No se pudo confirmar la reserva' });
+  }
+};
+
+/**
+ * Cancelar una reserva
+ * - Guía puede cancelar si está pending
+ * - Viajero puede cancelar si NO está confirmed (o si está confirmed, acá lo forzamos a 400 por simpleza de MVP)
+ *   (Podemos ajustar reglas después)
+ */
+exports.cancel = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+
+    const booking = await Booking.findById(id);
+    if (!booking) return res.status(404).json({ error: 'Reserva no encontrada' });
+
+    const isGuide = String(booking.guide) === String(userId);
+    const isTraveler = String(booking.traveler) === String(userId);
+
+    if (!isGuide && !isTraveler) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    // Reglas simples MVP:
+    if (isGuide) {
+      if (booking.status !== 'pending') {
+        return res.status(400).json({ error: 'El guía solo puede cancelar si está pending' });
+      }
+    } else if (isTraveler) {
+      if (booking.status === 'confirmed') {
+        return res.status(400).json({ error: 'El viajero no puede cancelar una reserva ya confirmada' });
+      }
+    }
+
+    booking.status = 'canceled';
+    await booking.save();
+
+    return res.json({ booking });
+  } catch (err) {
+    console.error('cancel booking error:', err);
+    return res.status(500).json({ error: 'No se pudo cancelar la reserva' });
   }
 };

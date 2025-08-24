@@ -1,21 +1,22 @@
+// src/routes/booking.routes.js
 const express = require('express');
-const auth = require('../middleware/auth');
-const {
-  create, mine, listByGuide, cancelMine,
-  mineAsGuide, confirmAsGuide, markPaidDev, completeAsGuide, myEarnings
-} = require('../controllers/booking.controller');
-
 const router = express.Router();
+const auth = require('../middleware/auth');
+const bookingCtrl = require('../controllers/booking.controller');
 
-router.post('/', auth, create);                       // crear reserva
-router.get('/mine', auth, mine);                      // mis reservas (traveler)
-router.get('/guide/:guideId', listByGuide);           // reservas de un guía (público)
-router.post('/:id/cancel', auth, cancelMine);         // cancelar mi reserva (traveler)
+// Crear reserva (viajero)
+router.post('/', auth, bookingCtrl.create);
 
-router.get('/me/guide', auth, mineAsGuide);           // reservas donde soy guía
-router.post('/:id/confirm', auth, confirmAsGuide);    // guía confirma
-router.post('/:id/paid-dev', auth, markPaidDev);      // guía marca pagada (solo dev/QA)
-router.post('/:id/complete', auth, completeAsGuide);  // guía completa (tras pago)
-router.get('/me/earnings', auth, myEarnings);         // resumen de ganancias
+// Mis reservas como viajero
+router.get('/mine', auth, bookingCtrl.mine);
+
+// Reservas que recibo como guía
+router.get('/as-guide', auth, bookingCtrl.asGuide);
+
+// Confirmar (guía)
+router.post('/:id/confirm', auth, bookingCtrl.confirm);
+
+// Cancelar (guía o viajero con reglas MVP)
+router.post('/:id/cancel', auth, bookingCtrl.cancel);
 
 module.exports = router;
