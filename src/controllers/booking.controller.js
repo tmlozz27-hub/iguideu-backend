@@ -1,119 +1,147 @@
 // src/controllers/booking.controller.js
-// Controlador en memoria para pruebas (sin Mongo)
+// Store en memoria + reglas de confirm/cancel + anti-solapamiento + reset + listado
 
-const bookings = new Map(); // _id -> booking
+const crypto = require('crypto');
 
-function makeObjectId() {
-  // genera un 24-hex pseudo ObjectId
-  const hex = '0123456789abcdef';
-  let s = '';
-  for (let i = 0; i < 24; i++) s += hex[Math.floor(Math.random() * 16)];
-  return s;
+// ---- In-memory store (se reinicia al reiniciar el server) ----
+const store = {
+  bookings: [], // cada booking: {_id, traveler, guide, startAt, endAt, priceUSD, status:'pending'|'confirmed'|'canceled'}
+};
+
+// ---- Helpers ----
+function newId() {
+  // 24 hex (como ObjectId) para tests cómodos
+  return crypto.randomBytes(12).toString('hex');
 }
 
-exports.createBooking = async (req, res) => {
-  try {
-    // Debe venir autenticado como traveler (stub de /middlewares/auth ya lo setea)
-    if (!req.user || req.user.role !== 'traveler') {
-      return res.status(401).json({ error: 'Solo traveler puede crear booking' });
-    }
+function parseISO(d) {
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) throw new Error('Fecha inválida');
+  return dt;
+}
 
-    const { guideId, startAt, endAt, priceUSD, availabilityBlockId } = req.body || {};
+function overlaps(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+// ---- Controllers ----
+exports.resetMemory = (req, res) => {
+  store.bookings = [];
+  res.json({ ok: true, cleared: true, count: 0 });
+};
+
+exports.listBookings = (req, res) => {
+  res.json({ bookings: store.bookings });
+};
+
+exports.createBooking = (req, res) => {
+  try {
+    const { guideId, startAt, endAt, priceUSD } = req.body || {};
+    if (!req.user?.id || !req.user?.role) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+    if (req.user.role !== 'traveler') {
+      return res.status(403).json({ error: 'Solo traveler puede crear' });
+    }
     if (!guideId || !startAt || !endAt || typeof priceUSD !== 'number') {
-      return res.status(400).json({ error: 'Faltan campos: guideId, startAt, endAt, priceUSD' });
+      return res.status(400).json({ error: 'Campos requeridos: guideId, startAt, endAt, priceUSD(number)' });
     }
 
-    const _id = makeObjectId();
+    const start = parseISO(startAt);
+    const end = parseISO(endAt);
+    if (!(start < end)) return res.status(400).json({ error: 'Rango horario inválido' });
+
     const booking = {
-      _id,
-      traveler: req.user.id,   // del token TRAVELER:...
-      guide: guideId,          // string 24-hex
-      startAt,
-      endAt,
+      _id: newId(),
+      traveler: req.user.id,
+      guide: guideId,
+      startAt: start.toISOString(),
+      endAt: end.toISOString(),
       priceUSD,
-      availabilityBlockId: availabilityBlockId || null,
-      status: 'pending',       // pending | confirmed | cancelled
-      createdAt: new Date().toISOString(),
-      cancelledAt: null,
+      status: 'pending',
     };
-
-    bookings.set(_id, booking);
-    return res.status(201).json({ booking });
-  } catch (err) {
-    console.warn('createBooking error:', err);
-    return res.status(500).json({ error: 'createBooking failed (in-memory)' });
+    store.bookings.push(booking);
+    res.status(201).json({ booking });
+  } catch (e) {
+    console.warn('createBooking error:', e.message);
+    res.status(500).json({ error: 'createBooking failed' });
   }
 };
 
-exports.confirmBooking = async (req, res) => {
+exports.confirmBooking = (req, res) => {
   try {
-    if (!req.user || req.user.role !== 'guide') {
-      return res.status(401).json({ error: 'Solo guía puede confirmar' });
+    if (!req.user?.id || !req.user?.role) {
+      return res.status(401).json({ error: 'No autenticado' });
     }
-    const { id } = req.params;
-    const booking = bookings.get(id);
-    if (!booking) return res.status(404).json({ error: 'Booking no encontrado' });
+    const id = req.params.id;
+    const bk = store.bookings.find(b => b._id === id);
+    if (!bk) return res.status(404).json({ error: 'Booking no encontrado' });
 
-    // Solo el dueño (guía) de la reserva
-    if (booking.guide !== req.user.id) {
-      return res.status(403).json({ error: 'No sos el guía de este booking' });
+    if (req.user.role !== 'guide' || req.user.id !== bk.guide) {
+      return res.status(403).json({ error: 'Solo el guía dueño puede confirmar' });
+    }
+    if (bk.status === 'canceled') {
+      return res.status(409).json({ error: 'No se puede confirmar un booking cancelado' });
+    }
+    if (bk.status === 'confirmed') {
+      return res.status(200).json({ booking: bk }); // ya estaba confirmado
     }
 
-    if (booking.status !== 'pending') {
-      return res.status(409).json({ error: `No se puede confirmar desde estado ${booking.status}` });
+    // Anti-solapamiento: el guía no puede tener otro booking confirmado que pise el horario
+    const s = parseISO(bk.startAt);
+    const e = parseISO(bk.endAt);
+    const conflict = store.bookings.find(b =>
+      b._id !== bk._id &&
+      b.guide === bk.guide &&
+      b.status === 'confirmed' &&
+      overlaps(s, e, parseISO(b.startAt), parseISO(b.endAt))
+    );
+    if (conflict) {
+      return res.status(409).json({
+        error: 'overlap',
+        message: 'El guía ya tiene un booking confirmado que se solapa',
+        conflictId: conflict._id
+      });
     }
 
-    booking.status = 'confirmed';
-    return res.json({ booking });
-  } catch (err) {
-    console.warn('confirmBooking error:', err);
-    return res.status(500).json({ error: 'confirmBooking failed (in-memory)' });
+    bk.status = 'confirmed';
+    res.json({ booking: bk });
+  } catch (e) {
+    console.warn('confirmBooking error:', e.message);
+    res.status(500).json({ error: 'confirmBooking failed' });
   }
 };
 
-exports.cancelBooking = async (req, res) => {
+exports.cancelBooking = (req, res) => {
   try {
-    if (!req.user) return res.status(401).json({ error: 'No autenticado' });
+    if (!req.user?.id || !req.user?.role) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+    const id = req.params.id;
+    const bk = store.bookings.find(b => b._id === id);
+    if (!bk) return res.status(404).json({ error: 'Booking no encontrado' });
 
-    const { id } = req.params;
-    const booking = bookings.get(id);
-    if (!booking) return res.status(404).json({ error: 'Booking no encontrado' });
+    const isTraveler = req.user.role === 'traveler' && req.user.id === bk.traveler;
+    const isGuide = req.user.role === 'guide' && req.user.id === bk.guide;
 
-    const isGuide = req.user.role === 'guide' && booking.guide === req.user.id;
-    const isTraveler = req.user.role === 'traveler' && booking.traveler === req.user.id;
-
-    if (!isGuide && !isTraveler) {
-      return res.status(403).json({ error: 'No sos parte de este booking' });
+    if (!isTraveler && !isGuide) {
+      return res.status(403).json({ error: 'Solo traveler dueño o guía dueño pueden cancelar' });
     }
 
-    // Reglas:
-    // - Guía puede cancelar si está pending o confirmed.
-    // - Viajero puede cancelar solo si está pending (no confirmed).
-    if (isGuide) {
-      if (booking.status === 'cancelled') {
-        return res.status(409).json({ error: 'Ya está cancelado' });
-      }
-      booking.status = 'cancelled';
-      booking.cancelledAt = new Date().toISOString();
-      return res.json({ booking });
+    if (bk.status === 'canceled') {
+      return res.status(409).json({ error: 'Ya estaba cancelado' });
     }
 
-    if (isTraveler) {
-      if (booking.status === 'confirmed') {
-        return res.status(409).json({ error: 'El viajero no puede cancelar un confirmed' });
-      }
-      if (booking.status === 'cancelled') {
-        return res.status(409).json({ error: 'Ya está cancelado' });
-      }
-      // pending -> puede cancelar
-      booking.status = 'cancelled';
-      booking.cancelledAt = new Date().toISOString();
-      return res.json({ booking });
+    // Regla: traveler NO puede cancelar si está confirmado
+    if (isTraveler && bk.status === 'confirmed') {
+      return res.status(409).json({ error: 'Traveler no puede cancelar un booking confirmado' });
     }
 
-    return res.status(400).json({ error: 'Regla no contemplada' });
-  } catch (err) {
-    console.warn('cancelBooking error:', err);
-    return res.status(500).json({ error: 'cancelBooking failed (in-memory)' });
+    // Guía puede cancelar cualquiera (pending/confirmed)
+    bk.status = 'canceled';
+    res.json({ booking: bk });
+  } catch (e) {
+    console.warn('cancelBooking error:', e.message);
+    res.status(500).json({ error: 'cancelBooking failed' });
   }
 };

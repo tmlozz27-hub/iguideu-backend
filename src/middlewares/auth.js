@@ -1,4 +1,5 @@
-﻿module.exports = (req, res, next) => {
+﻿// src/middlewares/auth.js
+module.exports = (req, res, next) => {
   const h = req.headers.authorization || "";
   // Formatos válidos en dev:
   //   Authorization: Bearer GUIDE:<idGuia>
