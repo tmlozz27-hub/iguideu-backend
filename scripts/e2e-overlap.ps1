@@ -1,72 +1,75 @@
-# scripts/e2e-overlap.ps1
 $ErrorActionPreference = "Stop"
-$URL = "http://127.0.0.1:3000"
 
-function Call($method, $path, $token, $body=$null) {
-  $args = @{ Uri = "$URL$path"; Method = $method; Headers = @{ Authorization = $token }; ErrorAction='Stop' }
-  if ($body) { $args.ContentType='application/json'; $args.Body=$body }
-  return Invoke-RestMethod @args
+# === Config ===
+$URL   = $env:URL; if (-not $URL -or $URL -eq "") { $URL = "http://127.0.0.1:3000" }
+$email = "tom@example.com"
+$pass  = "superseguro123"
+
+function Invoke-Json {
+  param([string]$Method,[string]$Path,[hashtable]$Body,[hashtable]$Headers)
+  $uri = "$URL$Path"
+  if ($Body) {
+    return Invoke-RestMethod -Uri $uri -Method $Method -Proxy $null `
+      -ContentType "application/json" -Body ($Body | ConvertTo-Json -Depth 6) -Headers $Headers
+  } else {
+    return Invoke-RestMethod -Uri $uri -Method $Method -Proxy $null -Headers $Headers
+  }
 }
 
-# 0) Health
-$h = Invoke-RestMethod -Uri "$URL/api/health" -Method Get
-"HEALTH: $($h.status) / $($h.env)"
+Write-Host "HEALTH..."
+$h = Invoke-Json -Method Get -Path "/api/health"
+Write-Host ("ok / " + $h.env)
 
-# 0.1) Reset memoria (si tu server expone /api/_reset)
+# === Login con fallback a registro ===
+$headers = $null
 try {
-  Invoke-RestMethod -Uri "$URL/api/_reset" -Method Post | Out-Null
-  "RESET OK"
+  $login = Invoke-Json -Method Post -Path "/api/auth/login" -Body @{ email=$email; password=$pass }
 } catch {
-  "RESET SKIPPED (no endpoint /api/_reset o no necesario)"
+  if ($_.ErrorDetails.Message -like '*"invalid_credentials"*') {
+    Write-Host "No existe el usuario. Registrando..."
+    $reg = Invoke-Json -Method Post -Path "/api/auth/register" -Body @{ name="Tom"; email=$email; password=$pass }
+    Write-Host "Registro OK. Reintentando login..."
+    $login = Invoke-Json -Method Post -Path "/api/auth/login" -Body @{ email=$email; password=$pass }
+  } else {
+    throw
+  }
 }
+$token = $login.token
+$headers = @{ Authorization = "Bearer $token" }
+Write-Host "LOGIN OK"
 
-# Tokens válidos (IDs 24-hex)
-$GUIDE_TOKEN    = "Bearer GUIDE:64b000000000000000000001"
-$TRAVELER_TOKEN = "Bearer TRAVELER:64b000000000000000000002"
+# === Reset de datos (si tu server lo expone) ===
+Invoke-Json -Method Post -Path "/api/bookings/debug/reset" -Headers $headers | Out-Null
+Write-Host "RESET OK"
 
-# Booking A (confirmable)
-$startA = (Get-Date).AddHours(2).ToString("o")
-$endA   = (Get-Date).AddHours(4).ToString("o")
-$bodyA  = @{ guideId="64b000000000000000000001"; startAt=$startA; endAt=$endA; priceUSD=100 } | ConvertTo-Json
-$A = Call POST "/api/bookings" $TRAVELER_TOKEN $bodyA
-$AID = $A.booking._id
-"CREATED A: $AID"
+# === Preparar slots ===
+$now    = Get-Date
+$startA = $now.AddMinutes(10).ToString("o")
+$endA   = $now.AddHours(2).ToString("o")
+$startB = $now.AddMinutes(30).ToString("o") # solapa con A
+$endB   = $now.AddHours(2.5).ToString("o")
 
-# Confirm A
-Call PATCH "/api/bookings/$AID/confirm" $GUIDE_TOKEN | Out-Null
-"CONFIRM A OK"
+# === Crear + confirmar A ===
+$A = Invoke-Json -Method Post -Path "/api/bookings" -Headers $headers -Body @{ guide="g1"; startAt=$startA; endAt=$endA }
+$Aid = $A.booking._id
+Invoke-Json -Method Patch -Path "/api/bookings/$Aid/confirm" -Headers $headers | Out-Null
+Write-Host "CONFIRM A OK → $Aid"
 
-# Booking B (se solapa con A)
-$startB = (Get-Date).AddHours(3).ToString("o")
-$endB   = (Get-Date).AddHours(5).ToString("o")
-$bodyB  = @{ guideId="64b000000000000000000001"; startAt=$startB; endAt=$endB; priceUSD=120 } | ConvertTo-Json
-$B = Call POST "/api/bookings" $TRAVELER_TOKEN $bodyB
-$BID = $B.booking._id
-"CREATED B: $BID"
-
-# Confirm B -> debe dar 409 overlap
+# === Crear B y chequear overlap (debe dar 409) ===
+$B = Invoke-Json -Method Post -Path "/api/bookings" -Headers $headers -Body @{ guide="g1"; startAt=$startB; endAt=$endB }
+$Bid = $B.booking._id
 try {
-  Call PATCH "/api/bookings/$BID/confirm" $GUIDE_TOKEN | Out-Null
-  throw "ERROR: B se confirmó pero debía bloquearse por solape"
+  Invoke-Json -Method Patch -Path "/api/bookings/$Bid/confirm" -Headers $headers | Out-Null
+  Write-Host "⚠️ Se confirmó B y NO debía (falló overlap)"; exit 1
 } catch {
-  "OK: B bloqueado por overlap (409)"
+  if ($_.ErrorDetails.Message -like '*"error":"overlap"*') {
+    Write-Host "✅ OVERLAP bloqueado (409 recibido)"
+  } else {
+    Write-Host "⚠️ Error inesperado al confirmar B:" $_.Exception.Message; exit 1
+  }
 }
 
-# Booking C (no se solapa)
-$startC = (Get-Date).AddHours(5).ToString("o")
-$endC   = (Get-Date).AddHours(7).ToString("o")
-$bodyC  = @{ guideId="64b000000000000000000001"; startAt=$startC; endAt=$endC; priceUSD=140 } | ConvertTo-Json
-$C = Call POST "/api/bookings" $TRAVELER_TOKEN $bodyC
-$CID = $C.booking._id
-"CREATED C: $CID"
-
-# Confirm C -> OK
-Call PATCH "/api/bookings/$CID/confirm" $GUIDE_TOKEN | Out-Null
-"CONFIRM C OK"
-
-"LIST:"
-(Invoke-RestMethod -Uri "$URL/api/bookings" -Method Get).bookings | ForEach-Object {
-  "$($_._id) | guide=$($_.guide) | traveler=$($_.traveler) | $($_.startAt) - $($_.endAt) | status=$($_.status)"
-}
-
+# === Listar final ===
+$all = Invoke-Json -Method Get -Path "/api/bookings" -Headers $headers
+"LIST:"; $all | ConvertTo-Json -Depth 8
 

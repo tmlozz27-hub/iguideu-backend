@@ -1,0 +1,5 @@
+BOOT 1: inicio server.js
+BOOT 2: env loaded { NODE_ENV: 'development', HOST: '127.0.0.1', PORT: 3000 }
+BOOT 4: intentando cargar middlewares opcionales
+BOOT 4: middlewares cargados
+BOOT 3: server.listen OK → 🚀 Express vivo en 127.0.0.1:3000 (pid:8376)
