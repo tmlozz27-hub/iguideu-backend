@@ -1,24 +1,25 @@
-// src/middlewares/validate.js
-const { ZodError } = require("zod");
+import { celebrate, Joi, Segments } from "celebrate";
 
-function validate(schema, pick = "body") {
-  return (req, res, next) => {
-    try {
-      const data = pick === "query" ? req.query : req.body;
-      const parsed = schema.parse(data);
-      if (pick === "query") req.validatedQuery = parsed;
-      else req.validated = parsed;
-      next();
-    } catch (err) {
-      if (err instanceof ZodError) {
-        return res.status(400).json({
-          error: "validation_error",
-          details: err.issues.map((i) => ({ path: i.path, message: i.message })),
-        });
-      }
-      next(err);
-    }
-  };
-}
+export const validateSignup = celebrate({
+  [Segments.BODY]: Joi.object({
+    email: Joi.string().email().required(),
+    password: Joi.string().min(8).max(72).required(),
+    name: Joi.string().min(2).max(60).required()
+  })
+});
 
-module.exports = { validate };
+export const validateLogin = celebrate({
+  [Segments.BODY]: Joi.object({
+    email: Joi.string().email().required(),
+    password: Joi.string().min(8).max(72).required()
+  })
+});
+
+export const validateBookingCreate = celebrate({
+  [Segments.BODY]: Joi.object({
+    guide: Joi.string().required(),
+    startAt: Joi.date().iso().required(),
+    endAt: Joi.date().iso().greater(Joi.ref("startAt")).required(),
+    price: Joi.number().positive().required()
+  })
+});

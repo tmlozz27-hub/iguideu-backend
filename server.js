@@ -1,46 +1,43 @@
-﻿require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const morgan = require('morgan');
+import dotenv from "dotenv";
+dotenv.config();
+
+import express from "express";
+import mongoose from "mongoose";
+import morgan from "morgan";
+import { errors as celebrateErrors } from "celebrate";
+import { applySecurity } from "./src/config/security.js";
+import authRoutes from "./src/routes/auth.routes.js";
+import bookingRoutes from "./src/routes/booking.routes.js";
+import policyRoutes from "./src/routes/policy.routes.js";
 
 const app = express();
+app.set("trust proxy", 1);
+applySecurity(app);
+app.use(express.json({ limit: "512kb" }));
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
-// Middlewares base
-app.use(express.json());
-app.use(cors());
-app.use(morgan('dev'));
-
-// Health
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    env: process.env.NODE_ENV || 'development',
-    ts: new Date().toISOString(),
-  });
+app.get("/api/health", (req, res) => {
+  const dbState = mongoose.connection.readyState; // 0=down,1=connected,2=connecting,3=disconnecting
+  res.json({ status: "ok", env: process.env.NODE_ENV, dbState, timestamp: new Date().toISOString() });
 });
 
-// Rutas
-app.use('/api/auth', require('./src/routes/auth.routes'));
-app.use('/api/bookings', require('./src/routes/booking.routes'));
-app.use('/api/policies', require('./src/routes/policy.routes'));
+app.use("/api/auth", authRoutes);
+app.use("/api/bookings", bookingRoutes);
+app.use("/api/policy", policyRoutes);
 
-// 404
-app.use((req, res) => {
-  res.status(404).json({ error: 'not_found', path: req.originalUrl });
-});
-
-// Error handler
-// eslint-disable-next-line no-unused-vars
+app.use(celebrateErrors());
 app.use((err, req, res, next) => {
-  console.error('ERROR:', err);
-  res
-    .status(err.status || 500)
-    .json({ error: err.code || 'internal_error', message: err.message || 'Unexpected error' });
+  console.error(err);
+  const code = err.status || 500;
+  res.status(code).json({ error: code === 500 ? "Internal error" : err.message || "Error" });
 });
 
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '0.0.0.0';
-
-app.listen(PORT, HOST, () => {
-  console.log(`🚀 Express vivo en ${HOST}:${PORT}`);
-});
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB conectado"))
+  .then(() => app.listen(PORT, () => console.log(`🚀 Servidor Express en 127.0.0.1:${PORT}`)))
+  .catch((e) => {
+    console.error("❌ Mongo error:", e.message);
+    process.exit(1);
+  });

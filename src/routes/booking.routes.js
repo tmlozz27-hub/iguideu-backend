@@ -1,139 +1,71 @@
-// src/routes/booking.routes.js
-const express = require("express");
-const router = express.Router();
-const { z } = require("zod");
-const { validate } = require("../middlewares/validate");
-const { requireAuth } = require("../middlewares/auth.middleware");
-const { evaluateCancellation } = require("../policies/cancellation");
-const { notifyBookingUpdate } = require("../utils/notifier");
+import { Router } from "express";
+import mongoose from "mongoose";
+import Booking from "../models/Booking.js";
+import { authRequired } from "../middlewares/auth.js";
+import { validateBookingCreate } from "../middlewares/validate.js";
 
-// --- In-memory store (simple) ---
-let BOOKINGS = []; // cada item: {_id, traveler, guide, startAt, endAt, price, status, history[], confirmAt?, cancelledAt?, cancelInfo?}
+const router = Router();
 
-function newId() {
-  return String(Date.now()) + String(Math.floor(Math.random() * 1000)).padStart(3, "0");
-}
-
-function overlap(a, b) {
-  if (a.guide !== b.guide) return false;
-  const aStart = new Date(a.startAt), aEnd = new Date(a.endAt);
-  const bStart = new Date(b.startAt), bEnd = new Date(b.endAt);
-  return aStart < bEnd && bStart < aEnd;
-}
-
-// --- Schemas ---
-const createSchema = z.object({
-  guide: z.string().min(1),
-  startAt: z.string().datetime(),
-  endAt: z.string().datetime(),
-  price: z.number().nonnegative().default(0),
+router.get("/", authRequired, async (req, res) => {
+  const mine = await Booking.find({ $or: [{ traveler: req.user.id }, { guide: req.user.id }] })
+    .sort({ createdAt: -1 })
+    .lean();
+  res.json({ bookings: mine });
 });
 
-const cancelSchema = z.object({
-  forceMajeure: z.boolean().optional(),
-});
-
-// --- Listado ---
-router.get("/", requireAuth, (req, res) => {
-  res.json({ ok: true, bookings: BOOKINGS });
-});
-
-// --- Crear ---
-router.post("/", requireAuth, validate(createSchema), (req, res) => {
-  const data = req.validated;
-  const who = req.user?.email || "unknown";
-  const booking = {
-    _id: newId(),
-    traveler: who,
-    guide: data.guide,
-    startAt: data.startAt,
-    endAt: data.endAt,
-    price: data.price ?? 0,
-    status: "pending",
-    history: [{ at: new Date().toISOString(), actor: who, action: "create" }],
-  };
-  BOOKINGS.push(booking);
-  res.json({ ok: true, booking });
-});
-
-// --- Confirmar (idempotente) ---
-router.patch("/:id/confirm", requireAuth, (req, res) => {
-  const id = req.params.id;
-  const booking = BOOKINGS.find((b) => b._id === id);
-  if (!booking) return res.status(404).json({ error: "not_found" });
-
-  if (booking.status === "confirmed") {
-    return res.json({ ok: true, booking }); // idempotencia
-  }
-  if (booking.status === "cancelled") {
-    return res.status(409).json({ error: "invalid_transition", from: "cancelled", to: "confirmed" });
-  }
-
-  // Chequear overlap solo contra confirmadas
-  const conflict = BOOKINGS.find(
-    (b) => b.status === "confirmed" && overlap(b, booking)
-  );
-  if (conflict) {
-    return res.status(409).json({ error: "overlap", conflict });
-  }
-
-  booking.status = "confirmed";
-  booking.confirmAt = new Date().toISOString();
-  booking.history.push({ at: booking.confirmAt, actor: req.user?.email || "unknown", action: "confirm" });
-
-  notifyBookingUpdate("confirmed", booking);
-  res.json({ ok: true, booking });
-});
-
-// --- Cancelar (idempotente + política) ---
-router.patch("/:id/cancel", requireAuth, validate(cancelSchema), (req, res) => {
-  const id = req.params.id;
-  const booking = BOOKINGS.find((b) => b._id === id);
-  if (!booking) return res.status(404).json({ error: "not_found" });
-
-  if (booking.status === "cancelled") {
-    return res.json({ ok: true, booking }); // idempotencia
-  }
-
-  const actorRole = req.user?.role || "traveler";
-  const who = actorRole === "guide" ? "guide" : "traveler";
-  const forceMajeure = !!req.validated?.forceMajeure;
-
-  const evalRes = evaluateCancellation({
-    booking,
-    who,
-    now: new Date(),
-    forceMajeure,
+router.post("/", authRequired, validateBookingCreate, async (req, res) => {
+  const { guide, startAt, endAt, price } = req.body;
+  const booking = await Booking.create({
+    traveler: new mongoose.Types.ObjectId(req.user.id),
+    guide,
+    startAt,
+    endAt,
+    price,
+    status: "pending"
   });
+  res.status(201).json({ booking });
+});
 
-  booking.status = "cancelled";
-  booking.cancelledAt = new Date().toISOString();
-  booking.cancelInfo = {
-    actor: who,
-    reason: evalRes.reason,
-    travelerRefundPct: evalRes.travelerRefundPct,
-    guidePenaltyPct: evalRes.guidePenaltyPct,
-    hoursUntilStart: evalRes.hoursUntilStart,
-  };
-  booking.history.push({
-    at: booking.cancelledAt,
-    actor: req.user?.email || "unknown",
-    role: who,
-    action: "cancel",
-    reason: evalRes.reason,
+router.patch("/:id/confirm", authRequired, async (req, res) => {
+  const id = req.params.id;
+  const session = await Booking.startSession();
+  await session.withTransaction(async () => {
+    const current = await Booking.findById(id).session(session);
+    if (!current) return res.status(404).json({ error: "Booking not found" });
+    if (current.status === "canceled") return res.status(400).json({ error: "Already canceled" });
+
+    const overlaps = await Booking.find({
+      _id: { $ne: current._id },
+      guide: current.guide,
+      status: "confirmed",
+      $or: [
+        { startAt: { $lt: current.endAt, $gte: current.startAt } },
+        { endAt: { $gt: current.startAt, $lte: current.endAt } },
+        { startAt: { $lte: current.startAt }, endAt: { $gte: current.endAt } }
+      ]
+    }).session(session);
+
+    for (const b of overlaps) {
+      b.status = "canceled";
+      await b.save({ session });
+    }
+
+    current.status = "confirmed";
+    await current.save({ session });
+
+    res.json({ booking: current, canceledOverlaps: overlaps.map((b) => b._id) });
   });
-
-  notifyBookingUpdate("cancelled", booking);
-  res.json({ ok: true, booking });
+  session.endSession();
 });
 
-// --- Debug reset (solo no-producción) ---
-router.post("/debug/reset", requireAuth, (req, res) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(403).json({ error: "forbidden_in_production" });
+router.patch("/:id/cancel", authRequired, async (req, res) => {
+  const b = await Booking.findById(req.params.id);
+  if (!b) return res.status(404).json({ error: "Booking not found" });
+  if (b.status !== "canceled") {
+    b.status = "canceled";
+    await b.save();
   }
-  BOOKINGS = [];
-  res.json({ ok: true });
+  res.json({ booking: b });
 });
 
-module.exports = router;
+export default router;
