@@ -2,3 +2,5 @@
 .env
 .env.*
 npm-debug.log*
+
+.env

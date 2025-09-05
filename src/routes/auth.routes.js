@@ -1,27 +1,53 @@
-import { Router } from "express";
-import User from "../models/User.js";
-import { validateSignup, validateLogin } from "../middlewares/validate.js";
-import { signToken } from "../middlewares/auth.js";
+﻿import { Router } from "express";
+import { signToken, requireAuth } from "../middlewares/auth.js";
 
 const router = Router();
 
-router.post("/signup", validateSignup, async (req, res) => {
-  const { email, password, name } = req.body;
-  const exists = await User.findOne({ email });
-  if (exists) return res.status(409).json({ error: "Email already registered" });
-  const user = await User.create({ email, password, name });
-  const token = signToken({ userId: user._id, role: user.role });
-  res.status(201).json({ user: { id: user._id, email, name, role: user.role }, token });
+router.post("/signup", async (req, res) => {
+  try {
+    const { email, password, name } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: "email/password required" });
+    }
+    const User = global.models.User;
+
+    const exists = await User.findOne({ email }).lean();
+    if (exists) return res.status(409).json({ error: "email in use" });
+
+    // NO hashees acá: el pre-save del modelo User lo hace
+    const u = await User.create({ email, password, name });
+
+    const token = signToken(u);
+    res.status(201).json({ user: u.toJSON(), token });
+  } catch (e) {
+    console.error("POST /auth/signup error:", e);
+    res.status(500).json({ error: "internal error" });
+  }
 });
 
-router.post("/login", validateLogin, async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email }).select("+password");
-  if (!user || !(await user.compare(password))) {
-    return res.status(401).json({ error: "Invalid credentials" });
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: "email/password required" });
+    }
+    const User = global.models.User;
+    const u = await User.findOne({ email });
+    if (!u) return res.status(401).json({ error: "invalid credentials" });
+
+    const ok = await u.comparePassword(password);
+    if (!ok) return res.status(401).json({ error: "invalid credentials" });
+
+    const token = signToken(u);
+    res.json({ user: u.toJSON(), token });
+  } catch (e) {
+    console.error("POST /auth/login error:", e);
+    res.status(500).json({ error: "internal error" });
   }
-  const token = signToken({ userId: user._id, role: user.role });
-  res.json({ user: { id: user._id, email: user.email, name: user.name, role: user.role }, token });
+});
+
+router.get("/me", requireAuth, async (_req, res) => {
+  res.json({ user: _req.user });
 });
 
 export default router;
