@@ -1,82 +1,82 @@
-﻿import "dotenv/config";
-import express from "express";
-import helmet from "helmet";
-import cors from "cors";
-import compression from "compression";
-import hpp from "hpp";
-import morgan from "morgan";
-import rateLimit from "express-rate-limit";
-import mongoose from "mongoose";
+﻿import 'dotenv/config';
+import express from 'express';
+import mongoose from 'mongoose';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import cors from 'cors';
 
-import authRoutes from "./src/routes/auth.routes.js";
-import bookingRoutes from "./src/routes/booking.routes.js";
-import policyRoutes from "./src/routes/policy.routes.js";
-import { dbReady } from "./src/middlewares/dbReady.js";
+import authRouter from './src/routes/auth.routes.js';
+import bookingsRouter from './src/routes/bookings.routes.js';
+import paymentsRouter from './src/routes/payments.routes.js';
+import guidesRouter from './src/routes/guides.routes.js';
 
 const app = express();
-app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
-app.use(hpp());
-app.use(compression());
-app.use(express.json({ limit: "1mb" }));
-app.use(morgan("dev"));
+const PORT = process.env.PORT || 3000;
 
+// --- Seguridad base ---
+app.set('trust proxy', 1);
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false, // desactivar CSP por ahora (evita ruido en dev)
+}));
+
+const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
+app.use(cors({
+  origin: (origin, cb) => cb(null, allowedOrigin === '*' ? true : origin === allowedOrigin),
+  credentials: true,
+}));
+
+app.use(express.json({ limit: '256kb' }));
+
+// --- Rate limit global ---
 const limiter = rateLimit({
-  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
-  max: Number(process.env.RATE_LIMIT_MAX || 200),
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),
+  max: Number(process.env.RATE_LIMIT_MAX || 100),
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use(limiter);
 
-app.get("/api/health", (req, res) => {
-  const dbState =
-    global.mongoose && global.mongoose.connection
-      ? global.mongoose.connection.readyState
-      : 0;
-  res.json({
-    status: "ok",
-    env: process.env.NODE_ENV || "development",
-    dbState,
+// --- Rutas ---
+app.use('/api/auth', authRouter);
+app.use('/api/bookings', bookingsRouter);
+app.use('/api/payments', paymentsRouter);
+app.use('/api/guides', guidesRouter);
+
+// --- Health ---
+app.get('/api/health', (req, res) => {
+  return res.json({
+    status: 'ok',
+    env: process.env.NODE_ENV,
+    dbState: mongoose.connection.readyState,
     timestamp: new Date().toISOString(),
   });
 });
 
-const MONGO_URI = process.env.MONGO_URI;
-const PORT = Number(process.env.PORT || 3000);
+// --- 404 genérico ---
+app.use((req, res) => {
+  return res.status(404).json({ error: 'not_found', path: req.originalUrl });
+});
 
-async function connectDB() {
-  if (!MONGO_URI) {
-    console.warn("[WARN] MONGO_URI no configurada. Arranco sin DB para health.");
-    return;
-  }
-  try {
-    await mongoose.connect(MONGO_URI);
-    global.mongoose = mongoose;
-
-    if (!global.models) {
-      const { default: User } = await import("./src/models/User.js");
-      const { default: Booking } = await import("./src/models/Booking.js");
-      global.models = { User, Booking };
-    }
-
-    console.log("[OK] MongoDB conectado");
-  } catch (err) {
-    console.error("[ERR] Mongo error:", err.message);
-  }
-}
-
-app.use("/api/auth", dbReady, authRoutes);
-app.use("/api/bookings", dbReady, bookingRoutes);
-app.use("/api/policy", policyRoutes);
-
-app.use((err, req, res, _next) => {
-  console.error("Unhandled error:", err);
-  res.status(500).json({ error: "internal error" });
+// --- Error handler ---
+app.use((err, req, res, next) => {
+  console.error('[ERR]', err);
+  return res.status(500).json({ error: 'server_error' });
 });
 
 async function start() {
-  await connectDB();
-  app.listen(PORT, "127.0.0.1", () => {
-    console.log("[OK] Servidor Express en 127.0.0.1:" + PORT);
-  });
+  try {
+    if (!process.env.MONGO_URI) throw new Error('MONGO_URI no definida (.env)');
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log('[OK] MongoDB conectado');
+
+    app.listen(PORT, '127.0.0.1', () => {
+      console.log('[OK] Servidor Express en 127.0.0.1:3000');
+    });
+  } catch (err) {
+    console.error('[ERR] MongoDB', err);
+    process.exit(1);
+  }
 }
+
 start();

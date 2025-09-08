@@ -11,5 +11,5 @@ function CallJson {
   Invoke-RestMethod -Method $Method -Uri $uri -Headers $hdr -Body $b
 }
 
-Write-Host "Listo. Proba salud: " -ForegroundColor Cyan
+Write-Host "Health:" -ForegroundColor Cyan
 Invoke-RestMethod -Uri "http://127.0.0.1:3000/api/health" -Method GET

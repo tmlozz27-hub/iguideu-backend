@@ -1,0 +1,22 @@
+﻿import { Router } from "express";
+import Booking from "../models/Booking.js";
+import { authMiddleware } from "../middlewares/auth.js";
+
+/**
+ * LISTAR reservas del viajero autenticado
+ * GET /api/bookings/me
+ */
+export const bookingsMeRoute = (router) => {
+  router.get("/me", authMiddleware, async (req, res) => {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+    const bookings = await Booking.find({ traveler: userId })
+      .sort({ startAt: 1 })
+      .lean();
+
+    res.json({ count: bookings.length, bookings });
+  });
+};
+
+export default {}; // marcador para no romper si se pega temporalmente

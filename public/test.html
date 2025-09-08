@@ -1,0 +1,274 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>I GUIDE U – Test (filtros + orden + rango)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    body{ font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:20px; }
+    h1{ margin:0 0 12px }
+    .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0 }
+    button,select,input{ padding:6px 10px; font-size:14px }
+    #status{ margin-left:6px; font-weight:600 }
+    table{ width:100%; border-collapse: collapse; margin-top:10px }
+    th,td{ border:1px solid #ddd; padding:8px; font-size:14px; text-align:left }
+    th{ background:#f5f5f5 }
+    .ok{ color:#0a7f2e } .err{ color:#b00020 } .muted{ color:#666 }
+    .pill{ border:1px solid #ddd; border-radius:999px; padding:3px 8px; background:#fafafa }
+    #log{ white-space:pre; background:#0b1020; color:#e8f0ff; padding:10px; border-radius:6px; overflow:auto; max-height:240px }
+    #count{ margin-left:6px; font-weight:600 }
+    .spacer{ flex:1 }
+  </style>
+</head>
+<body>
+  <h1>I GUIDE U – Test</h1>
+
+  <div class="row">
+    <button id="signup">Signup (random)</button>
+    <button id="logout">Logout</button>
+    <span id="status" class="muted">No autenticado</span>
+  </div>
+
+  <div class="row">
+    <label class="pill">Guide:&nbsp;<input id="guide" placeholder="g123..." size="12"></label>
+    <button id="randGuide">Guía aleatoria</button>
+    <button id="createA">Crear A (2h–4h)</button>
+    <button id="createA68">Crear A (6h–8h)</button>
+    <button id="createOverlap">Crear B solapada (3h–5h)</button>
+    <button id="list">Mis bookings</button>
+  </div>
+
+  <!-- FILTROS -->
+  <div class="row" aria-label="filtros">
+    <strong>Filtros:</strong>
+    <label>Estado&nbsp;
+      <select id="f-state">
+        <option value="all">Todos</option>
+        <option value="pending">Pending</option>
+        <option value="confirmed">Confirmed</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+    </label>
+    <label>Guide contiene&nbsp;<input id="f-guide" placeholder="g..." size="10"></label>
+    <label><input type="checkbox" id="f-future"> Solo futuras</label>
+    <label>Desde&nbsp;<input id="f-from" type="datetime-local"></label>
+    <label>Hasta&nbsp;<input id="f-to" type="datetime-local"></label>
+    <label>Orden&nbsp;
+      <select id="f-sort">
+        <option value="startAt-asc">Inicio ↑</option>
+        <option value="startAt-desc">Inicio ↓</option>
+        <option value="endAt-asc">Fin ↑</option>
+        <option value="endAt-desc">Fin ↓</option>
+        <option value="status-asc">Estado A→Z</option>
+        <option value="status-desc">Estado Z→A</option>
+      </select>
+    </label>
+    <button id="f-clear">Limpiar</button>
+    <span id="count" class="muted"></span>
+    <span class="spacer"></span>
+  </div>
+
+  <h3>Mis reservas</h3>
+  <div id="bookings"></div>
+
+  <h3>Log</h3>
+  <pre id="log"></pre>
+
+<script>
+const out = document.getElementById("log");
+const statusEl = document.getElementById("status");
+const bookingsEl = document.getElementById("bookings");
+const countEl = document.getElementById("count");
+
+let token = null;
+let allBookings = [];
+const fmt = new Intl.DateTimeFormat(undefined, { dateStyle:"short", timeStyle:"short" });
+
+function log(o){ out.textContent += (typeof o==="string" ? o : JSON.stringify(o,null,2)) + "\n"; out.scrollTop = out.scrollHeight; }
+function setStatus(msg, css){ statusEl.textContent = msg; statusEl.className = css||"muted"; }
+function setCount(n, total){ if(total===undefined) total = allBookings.length; countEl.textContent = `Mostrando ${n} de ${total}`; countEl.className = n ? "ok" : "muted"; }
+
+function renderBookings(list){
+  setCount(list.length);
+  if(!list || !list.length){
+    bookingsEl.innerHTML = '<div class="muted">Sin reservas con estos filtros.</div>';
+    return;
+  }
+  const rows = list.map(b => {
+    const actions = (b.status === "pending")
+      ? `<button data-act="confirm" data-id="${b._id}">Confirmar</button>
+         <button data-act="cancel"  data-id="${b._id}">Cancelar</button>`
+      : "";
+    const price = typeof b.price === "number" ? `$${b.price}` : "";
+    return `<tr>
+      <td>${b._id}</td>
+      <td>${b.guide}</td>
+      <td>${fmt.format(new Date(b.startAt))}</td>
+      <td>${fmt.format(new Date(b.endAt))}</td>
+      <td>${price}</td>
+      <td>${b.status}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join("");
+
+  bookingsEl.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Guide</th><th>Inicio</th><th>Fin</th><th>Precio</th><th>Estado</th><th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  bookingsEl.querySelectorAll("button[data-act]").forEach(btn => {
+    btn.onclick = async () => {
+      if(!token) return;
+      const id = btn.dataset.id;
+      const act = btn.dataset.act;
+      const r = await fetch(`/api/bookings/${id}/${act}`, {
+        method: "PATCH",
+        headers: { "Authorization": "Bearer "+token }
+      });
+      const j = await r.json();
+      if(!r.ok){ setStatus(`Error ${act}: ${j.error||r.status}`, "err"); log(j); return; }
+      setStatus(`Reserva ${act} → ok`, "ok");
+      await loadBookings();
+    };
+  });
+}
+
+function sortBy(list, key, dir){
+  const s = [...list];
+  s.sort((a,b)=>{
+    const va = key.includes("At") ? new Date(a[key]).getTime() : (a[key]||"");
+    const vb = key.includes("At") ? new Date(b[key]).getTime() : (b[key]||"");
+    if(va<vb) return dir==="asc"?-1:1;
+    if(va>vb) return dir==="asc"? 1:-1;
+    return 0;
+  });
+  return s;
+}
+
+function applyFilters(){
+  let list = [...allBookings];
+  const st = document.getElementById("f-state").value;
+  const gq = document.getElementById("f-guide").value.trim().toLowerCase();
+  const fut = document.getElementById("f-future").checked;
+  const from = document.getElementById("f-from").value;
+  const to   = document.getElementById("f-to").value;
+  const sort = document.getElementById("f-sort").value; // ej: startAt-asc
+
+  const now = Date.now();
+
+  if(st !== "all") list = list.filter(b => b.status === st);
+  if(gq) list = list.filter(b => (b.guide||"").toLowerCase().includes(gq));
+  if(fut) list = list.filter(b => new Date(b.endAt).getTime() >= now);
+  if(from){
+    const ts = new Date(from).getTime();
+    list = list.filter(b => new Date(b.startAt).getTime() >= ts);
+  }
+  if(to){
+    const te = new Date(to).getTime();
+    list = list.filter(b => new Date(b.endAt).getTime() <= te);
+  }
+
+  const [k,dir] = sort.split("-");
+  list = sortBy(list, k, dir);
+
+  renderBookings(list);
+}
+
+function clearFilters(){
+  document.getElementById("f-state").value = "all";
+  document.getElementById("f-guide").value = "";
+  document.getElementById("f-future").checked = false;
+  document.getElementById("f-from").value = "";
+  document.getElementById("f-to").value   = "";
+  document.getElementById("f-sort").value = "startAt-asc";
+  applyFilters();
+}
+
+async function apiSignup(){
+  const email = "web+"+Math.floor(Math.random()*1e9)+"@iguideu.com";
+  const r = await fetch("/api/auth/signup", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ email, password:"Lorenza4127-", name:"Web" })
+  });
+  const j = await r.json();
+  if(!r.ok){ setStatus("Signup error", "err"); log(j); return; }
+  token = j.token;
+  setStatus("Autenticado: "+j.user.email, "ok");
+  log(j);
+  await loadBookings();
+}
+
+function doLogout(){
+  token = null;
+  setStatus("No autenticado", "muted");
+  allBookings = [];
+  renderBookings([]);
+  setCount(0,0);
+}
+
+function randomGuide(){
+  const g = "g"+Math.floor(Math.random()*1e9);
+  document.getElementById("guide").value = g;
+}
+
+async function apiCreate(rangeHours){
+  if(!token){ setStatus("Hacé Signup primero", "err"); return; }
+  const g = (document.getElementById("guide").value || "").trim() || ("g"+Math.floor(Math.random()*1e9));
+  const now = new Date();
+  const s = new Date(now.getTime()+rangeHours[0]*3600*1000).toISOString();
+  const e = new Date(now.getTime()+rangeHours[1]*3600*1000).toISOString();
+  const r = await fetch("/api/bookings", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+token },
+    body: JSON.stringify({ guide:g, startAt:s, endAt:e, price:100 })
+  });
+  const j = await r.json();
+  if(!r.ok){
+    setStatus(`Error crear: ${j.error||r.status}`, "err");
+    if(j.error==="overlap"){ j.hint = "Ya hay una reserva activa en ese rango"; }
+    log(j);
+    return;
+  }
+  setStatus("Creada", "ok");
+  log(j);
+  await loadBookings();
+}
+
+async function loadBookings(){
+  if(!token){ setStatus("Hacé Signup primero", "err"); return; }
+  const r = await fetch("/api/bookings", { headers:{ "Authorization":"Bearer "+token } });
+  const j = await r.json();
+  if(!r.ok){ setStatus(`Error list: ${j.error||r.status}`, "err"); log(j); return; }
+  allBookings = j.bookings || [];
+  applyFilters();
+}
+
+// Handlers
+document.getElementById("signup").onclick        = apiSignup;
+document.getElementById("logout").onclick        = doLogout;
+document.getElementById("randGuide").onclick     = randomGuide;
+document.getElementById("createA").onclick       = ()=>apiCreate([2,4]);
+document.getElementById("createA68").onclick     = ()=>apiCreate([6,8]);
+document.getElementById("createOverlap").onclick = ()=>apiCreate([3,5]);
+document.getElementById("list").onclick          = loadBookings;
+document.getElementById("f-clear").onclick       = clearFilters;
+
+// Filtros en vivo
+["f-state","f-guide","f-future","f-from","f-to","f-sort"].forEach(id=>{
+  const el = document.getElementById(id);
+  el.addEventListener(id==="f-guide"?"input":"change", applyFilters);
+});
+
+// Estado inicial
+setStatus("No autenticado", "muted");
+renderBookings([]);
+setCount(0,0);
+</script>
+</body>
+</html>
