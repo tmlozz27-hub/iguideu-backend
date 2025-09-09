@@ -1,33 +1,36 @@
-﻿import express from "express";
-import cors from "cors";
-import morgan from "morgan";
-import dotenv from "dotenv";
+﻿import "dotenv/config";
+import express from "express";
 import mongoose from "mongoose";
+import path from "path";
+import { fileURLToPath } from "url";
+import cors from "cors";
 
-import authRoutes from "./src/routes/auth.routes.js";
-import guidesRoutes from "./src/routes/guides.routes.js";
-import bookingsRoutes from "./src/routes/bookings.routes.js";
-import paymentsRoutes from "./src/routes/payments.routes.js";
+import authRouter from "./src/routes/auth.routes.js";
+import bookingsRouter from "./src/routes/bookings.routes.js";
+import adminRouter from "./src/routes/admin.routes.js";
+import guidesRouter from "./src/routes/guides.routes.js";
 
-dotenv.config();
+// Seguridad / hardening
+import { applyHardening } from "./src/middlewares/hardening.mjs";
 
 const app = express();
-app.use(express.json());
-app.use(cors());
-app.use(morgan("dev"));
 
-const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI;
+// Aplica seguridad
+applyHardening(app);
 
-// Conexión Mongo
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log("[OK] MongoDB conectado"))
-  .catch((err) => console.error("[ERR] MongoDB Error:", err));
+// Static (mini-frontend)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.use(express.static(path.join(__dirname, "public")));
 
-// Health
+// Rutas API
+app.use("/api/auth", authRouter);
+app.use("/api/bookings", bookingsRouter);
+app.use("/api/admin", adminRouter);
+app.use("/api/guides", guidesRouter);
+
+// Healthcheck
 app.get("/api/health", (req, res) => {
-  return res.json({
+  res.json({
     status: "ok",
     env: process.env.NODE_ENV || "development",
     dbState: mongoose.connection.readyState,
@@ -35,18 +38,17 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Rutas
-app.use("/api/auth", authRoutes);
-app.use("/api/guides", guidesRoutes);
-app.use("/api/bookings", bookingsRoutes);
-app.use("/api/payments", paymentsRoutes);
-
-// 404
-app.use((req, res) =>
-  res.status(404).json({ error: "not_found", path: req.originalUrl })
-);
-
-// Listen
-app.listen(PORT, "127.0.0.1", () =>
-  console.log(`[OK] Servidor Express en 127.0.0.1:${PORT}`)
-);
+// Conexión MongoDB + arranque servidor
+const PORT = process.env.PORT || 3000;
+mongoose
+  .connect(process.env.MONGO_URI, { dbName: "iguideu" })
+  .then(() => {
+    console.log(`[OK] MongoDB conectado`);
+    app.listen(PORT, () =>
+      console.log(`[OK] Servidor Express en 127.0.0.1:${PORT}`)
+    );
+  })
+  .catch((err) => {
+    console.error("[ERROR] MongoDB:", err);
+    process.exit(1);
+  });
