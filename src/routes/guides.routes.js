@@ -1,9 +1,10 @@
-﻿import { Router } from "express";
-import { requireAuth } from "../middlewares/auth.js";
+﻿// src/routes/guides.routes.js
+import { Router } from "express";
+import authRequired from "../middlewares/authRequired.js";
 
 const router = Router();
 
-// público
+// Públicos
 router.get("/", (req, res) => {
   return res.json({
     count: 2,
@@ -14,14 +15,9 @@ router.get("/", (req, res) => {
   });
 });
 
-// protegido (requiere token válido)
-router.get("/:id/secure", requireAuth, (req, res) => {
-  const { id } = req.params;
-  return res.json({
-    id,
-    secure: true,
-    requestedBy: req.user?.email,
-  });
+// Protegido de ejemplo
+router.get("/:id/secure", authRequired, (req, res) => {
+  return res.json({ id: req.params.id, secure: true });
 });
 
 export default router;

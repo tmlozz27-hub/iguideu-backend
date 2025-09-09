@@ -1,20 +1,17 @@
-﻿import jwt from "jsonwebtoken";
-import User from "../models/User.js";
+﻿// src/middlewares/authRequired.js
+import jwt from "jsonwebtoken";
 
-export default async function authRequired(req, res, next) {
+export default function authRequired(req, res, next) {
   try {
     const h = req.headers.authorization || "";
-    const parts = h.split(" ");
-    const token = parts.length === 2 ? parts[1] : null;
-    if (!token) return res.status(401).json({ error: "missing bearer token" });
-
+    const [scheme, token] = h.split(" ");
+    if (scheme !== "Bearer" || !token) {
+      return res.status(401).json({ error: "invalid token" });
+    }
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    const u = await User.findById(payload.id).select("_id email name role");
-    if (!u) return res.status(401).json({ error: "invalid token" });
-
-    req.user = { id: String(u._id), email: u.email, name: u.name, role: u.role };
-    next();
-  } catch (e) {
+    req.user = { id: payload.sub, role: payload.role || "user" };
+    return next();
+  } catch (err) {
     return res.status(401).json({ error: "invalid token" });
   }
 }
