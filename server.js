@@ -66,3 +66,41 @@ app.get("\/", (req,res)=> res.status(200).send({ ok:true, service:"iguideu-backe
 
 // mini landing
 app.get("\/", (req,res)=> res.status(200).send({ ok:true, service:"iguideu-backend", hint:"try /api/health or /payments-test.html" }));
+/** --- Fallbacks de frontend simple (no chocan con nada) --- **/
+try {
+  if (typeof app?.get === "function") {
+    // Landing básica para "/"
+    app.get("/", (req, res) => {
+      res.status(200).json({ ok: true, service: "iguideu-backend", hint: "try /api/health or /payments-test.html" });
+    });
+
+    // Ruta explícita para servir el HTML de test, sin depender de __dirname
+    app.get("/payments-test.html", (req, res) => {
+      const full = process.cwd() + "/public/payments-test.html";
+      return res.sendFile(full);
+    });
+  }
+} catch(e) {
+  console.error("fallback routes error:", e?.message || e);
+}
+/** --- fin fallbacks --- **/
+/** --- Fallbacks mínimos para servir frontend --- **/
+import fs from "fs";
+import path from "path";
+
+try {
+  if (typeof app?.get === "function") {
+    app.get("/", (req, res) => {
+      res.status(200).json({ ok: true, service: "iguideu-backend", hint: "try /api/health or /payments-test.html" });
+    });
+
+    app.get("/payments-test.html", (req, res) => {
+      const full = path.resolve(process.cwd(), "public", "payments-test.html");
+      if (!fs.existsSync(full)) return res.status(404).json({ error: "not_found", path: "/payments-test.html" });
+      return res.sendFile(full);
+    });
+  }
+} catch (e) {
+  console.error("fallback routes error:", e?.message || e);
+}
+/** --- fin fallbacks --- **/
