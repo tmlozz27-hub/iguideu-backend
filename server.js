@@ -1,25 +1,25 @@
-﻿import express from "express";
-import { fileURLToPath } from "url";import path from "path";import { applyHardening } from "./src/middlewares/hardening.mjs";
-import { fileURLToPath } from "url";import path from "path";import cors from "cors";
-import { fileURLToPath } from "url";import path from "path";import morgan from "morgan";
-import { fileURLToPath } from "url";import path from "path";import dotenv from "dotenv";
-import { fileURLToPath } from "url";import path from "path";import mongoose from "mongoose";
-
-import { fileURLToPath } from "url";import path from "path";import authRoutes from "./src/routes/auth.routes.js";
-import { fileURLToPath } from "url";import path from "path";import guidesRoutes from "./src/routes/guides.routes.js";
-import { fileURLToPath } from "url";import path from "path";import bookingsRoutes from "./src/routes/bookings.routes.js";
-import { fileURLToPath } from "url";import path from "path";import paymentsRoutes from "./src/routes/payments.routes.js";
+﻿import { fileURLToPath } from "url";
+import path from "path";
+import express from "express";
+import { applyHardening } from "./src/middlewares/hardening.mjs";
+import cors from "cors";
+import morgan from "morgan";
+import dotenv from "dotenv";
+import mongoose from "mongoose";
+import authRoutes from "./src/routes/auth.routes.js";
+import guidesRoutes from "./src/routes/guides.routes.js";
+import bookingsRoutes from "./src/routes/bookings.routes.js";
+import paymentsRoutes from "./src/routes/payments.routes.js";
 
 dotenv.config();
 export const app = express();
 app.use(express.json());
-// static (mini-frontend)
 app.use(express.static(path.join(__dirname, "public")));
+// static (mini-frontend)
 app.use(cors());
 app.use(morgan("dev"));
-
-import { fileURLToPath } from "url";import path from "path";const PORT = process.env.PORT || 3000;
-import { fileURLToPath } from "url";import path from "path";const MONGO_URI = process.env.MONGO_URI;
+const PORT = process.env.PORT || 3000;
+const MONGO_URI = process.env.MONGO_URI;
 
 // Conexión Mongo
 mongoose
@@ -57,6 +57,12 @@ app.listen(PORT, "0.0.0.0", () =>
 
 
 
+
+// mini landing
+app.get("\/", (req,res)=> res.status(200).send({ ok:true, service:"iguideu-backend", hint:"try /api/health or /payments-test.html" }));
+
+// mini landing
+app.get("\/", (req,res)=> res.status(200).send({ ok:true, service:"iguideu-backend", hint:"try /api/health or /payments-test.html" }));
 
 // mini landing
 app.get("\/", (req,res)=> res.status(200).send({ ok:true, service:"iguideu-backend", hint:"try /api/health or /payments-test.html" }));
