@@ -11,22 +11,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// servir carpeta public/ (mini front)
+// Sirve /public (mini front)
 app.use(express.static(path.join(__dirname, "public")));
 
-// ---- Rutas opcionales (no rompen si el archivo no existe) ----
-let paymentsRoutes;
+// Rutas opcionales (no rompen si no existen)
 try {
-  paymentsRoutes = (await import("./src/routes/payments.routes.js")).default;
+  const paymentsRoutes = (await import("./src/routes/payments.routes.js")).default;
+  if (paymentsRoutes) app.use("/api/payments", paymentsRoutes);
 } catch {}
-if (paymentsRoutes) app.use("/api/payments", paymentsRoutes);
 
 try {
   const bookingRoutes = (await import("./src/routes/booking.routes.js")).default;
   if (bookingRoutes) app.use("/api/bookings", bookingRoutes);
 } catch {}
 
-// ---- Health ----
+// Health
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
@@ -36,7 +35,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// ---- Landings simples ----
+// Landings simples
 app.get("/", (req, res) => {
   res.status(200).json({
     ok: true,
@@ -49,14 +48,14 @@ app.get("/payments-test.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "payments-test.html"));
 });
 
-// ---- Mongo ----
+// Mongo
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/iguideu";
 mongoose
   .connect(MONGO_URI)
   .then(() => console.log("[OK] MongoDB conectado"))
   .catch((err) => console.error("[ERR] MongoDB", err.message));
 
-// ---- Listen ----
+// Listen
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[OK] Servidor Express en 0.0.0.0:${PORT}`);
