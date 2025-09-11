@@ -1,5 +1,7 @@
-﻿import { fileURLToPath } from "url";
-import path from "path";
+﻿import path from "path";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import express from "express";
 import { applyHardening } from "./src/middlewares/hardening.mjs";
 import cors from "cors";
@@ -13,9 +15,7 @@ import paymentsRoutes from "./src/routes/payments.routes.js";
 
 dotenv.config();
 export const app = express();
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
-// static (mini-frontend)
+app.use(express.json());`r`napp.use(express.static(path.join(__dirname, "public")));`r`n// static (mini-frontend)
 app.use(cors());
 app.use(morgan("dev"));
 const PORT = process.env.PORT || 3000;
@@ -86,8 +86,6 @@ try {
 /** --- fin fallbacks --- **/
 /** --- Fallbacks mínimos para servir frontend --- **/
 import fs from "fs";
-import path from "path";
-
 try {
   if (typeof app?.get === "function") {
     app.get("/", (req, res) => {
@@ -104,3 +102,4 @@ try {
   console.error("fallback routes error:", e?.message || e);
 }
 /** --- fin fallbacks --- **/
+
