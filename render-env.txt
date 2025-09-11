@@ -1,0 +1,4 @@
+﻿NODE_ENV=production
+PORT=10000
+JWT_SECRET=prod_iguideu_secret_change_me
+MONGO_URI=mongodb+srv://iguideu_app:Lorenza4127-@iguideu-db.sfgtfz8.mongodb.net/iguideu?retryWrites=true&w=majority&appName=iguideu-db
