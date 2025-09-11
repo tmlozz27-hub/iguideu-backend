@@ -1,35 +1,34 @@
-﻿import path from "path";
+﻿import express from "express";
+import cors from "cors";
+import mongoose from "mongoose";
+import path from "path";
 import { fileURLToPath } from "url";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import express from "express";
-import { applyHardening } from "./src/middlewares/hardening.mjs";
-import cors from "cors";
-import morgan from "morgan";
-import dotenv from "dotenv";
-import mongoose from "mongoose";
-import authRoutes from "./src/routes/auth.routes.js";
-import guidesRoutes from "./src/routes/guides.routes.js";
-import bookingsRoutes from "./src/routes/bookings.routes.js";
-import paymentsRoutes from "./src/routes/payments.routes.js";
 
-dotenv.config();
-export const app = express();
-app.use(express.json());`r`napp.use(express.static(path.join(__dirname, "public")));`r`n// static (mini-frontend)
+const app = express();
 app.use(cors());
-app.use(morgan("dev"));
-const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI;
+app.use(express.json());
 
-// Conexión Mongo
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log("[OK] MongoDB conectado"))
-  .catch((err) => console.error("[ERR] MongoDB Error:", err));
+// servir carpeta public/ (mini front)
+app.use(express.static(path.join(__dirname, "public")));
 
-// Health
+// ---- Rutas opcionales (no rompen si el archivo no existe) ----
+let paymentsRoutes;
+try {
+  paymentsRoutes = (await import("./src/routes/payments.routes.js")).default;
+} catch {}
+if (paymentsRoutes) app.use("/api/payments", paymentsRoutes);
+
+try {
+  const bookingRoutes = (await import("./src/routes/booking.routes.js")).default;
+  if (bookingRoutes) app.use("/api/bookings", bookingRoutes);
+} catch {}
+
+// ---- Health ----
 app.get("/api/health", (req, res) => {
-  return res.json({
+  res.json({
     status: "ok",
     env: process.env.NODE_ENV || "development",
     dbState: mongoose.connection.readyState,
@@ -37,69 +36,28 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Rutas
-app.use("/api/auth", authRoutes);
-app.use("/api/guides", guidesRoutes);
-app.use("/api/bookings", bookingsRoutes);
-app.use("/api/payments", paymentsRoutes);
+// ---- Landings simples ----
+app.get("/", (req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: "iguideu-backend",
+    hint: "try /api/health or /payments-test.html",
+  });
+});
 
-// 404
-app.use((req, res) =>
-  res.status(404).json({ error: "not_found", path: req.originalUrl })
-);
+app.get("/payments-test.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "payments-test.html"));
+});
 
-// Listen
-app.listen(PORT, "0.0.0.0", () =>
-  console.log(`[OK] Servidor Express en 0.0.0.0:${PORT}`)
-);
+// ---- Mongo ----
+const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/iguideu";
+mongoose
+  .connect(MONGO_URI)
+  .then(() => console.log("[OK] MongoDB conectado"))
+  .catch((err) => console.error("[ERR] MongoDB", err.message));
 
-
-
-
-
-
-// mini landing
-app.get("\/", (req,res)=> res.status(200).send({ ok:true, service:"iguideu-backend", hint:"try /api/health or /payments-test.html" }));
-
-// mini landing
-app.get("\/", (req,res)=> res.status(200).send({ ok:true, service:"iguideu-backend", hint:"try /api/health or /payments-test.html" }));
-
-// mini landing
-app.get("\/", (req,res)=> res.status(200).send({ ok:true, service:"iguideu-backend", hint:"try /api/health or /payments-test.html" }));
-/** --- Fallbacks de frontend simple (no chocan con nada) --- **/
-try {
-  if (typeof app?.get === "function") {
-    // Landing básica para "/"
-    app.get("/", (req, res) => {
-      res.status(200).json({ ok: true, service: "iguideu-backend", hint: "try /api/health or /payments-test.html" });
-    });
-
-    // Ruta explícita para servir el HTML de test, sin depender de __dirname
-    app.get("/payments-test.html", (req, res) => {
-      const full = process.cwd() + "/public/payments-test.html";
-      return res.sendFile(full);
-    });
-  }
-} catch(e) {
-  console.error("fallback routes error:", e?.message || e);
-}
-/** --- fin fallbacks --- **/
-/** --- Fallbacks mínimos para servir frontend --- **/
-import fs from "fs";
-try {
-  if (typeof app?.get === "function") {
-    app.get("/", (req, res) => {
-      res.status(200).json({ ok: true, service: "iguideu-backend", hint: "try /api/health or /payments-test.html" });
-    });
-
-    app.get("/payments-test.html", (req, res) => {
-      const full = path.resolve(process.cwd(), "public", "payments-test.html");
-      if (!fs.existsSync(full)) return res.status(404).json({ error: "not_found", path: "/payments-test.html" });
-      return res.sendFile(full);
-    });
-  }
-} catch (e) {
-  console.error("fallback routes error:", e?.message || e);
-}
-/** --- fin fallbacks --- **/
-
+// ---- Listen ----
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[OK] Servidor Express en 0.0.0.0:${PORT}`);
+});
