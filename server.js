@@ -47,9 +47,10 @@ app.use((req, res) =>
 );
 
 // Listen
-app.listen(PORT, "127.0.0.1", () =>
-  console.log(`[OK] Servidor Express en 127.0.0.1:${PORT}`)
+app.listen(PORT, "0.0.0.0", () =>
+  console.log(`[OK] Servidor Express en 0.0.0.0:${PORT}`)
 );
+
 
 
 
