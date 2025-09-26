@@ -30,12 +30,9 @@ console.log("BOOT", {
 });
 
 // ---- Stripe ----
-const stripe =
-  STRIPE_KEY ? new Stripe(STRIPE_KEY) : null;
+const stripe = STRIPE_KEY ? new Stripe(STRIPE_KEY) : null;
 
 // ---- Rutas básicas ----
-
-// Root: confirma que el servicio está arriba y deja pista de rutas
 app.get("/", (_req, res) => {
   res.json({
     ok: true,
@@ -44,21 +41,19 @@ app.get("/", (_req, res) => {
   });
 });
 
-// Health
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     env: process.env.NODE_ENV,
     timestamp: new Date(),
     hasMongoUri: !!process.env.MONGO_URI,
-    dbState: mongoose.connection.readyState, // 0=disconnected 1=connected 2=connecting 3=disconnecting
+    dbState: mongoose.connection.readyState, // 0=disc 1=conn 2=conn.. 3=disc..
     payments: process.env.PAYMENTS_PROVIDER || (stripe ? "stripe" : "none"),
     hasStripeKey: !!STRIPE_KEY,
   });
 });
 
 // ---- Stripe Payment Intents ----
-// Handler compartido para ambas rutas (con /api y sin /api)
 async function handleCreateIntent(req, res) {
   try {
     if (!stripe) {
@@ -78,7 +73,7 @@ async function handleCreateIntent(req, res) {
       amount,
       currency,
       description: description || "IGU",
-      payment_method_types: ["card"], // forzamos card para evitar el error de métodos no activados
+      payment_method_types: ["card"], // evita error de métodos no activados
     });
 
     return res.json({ client_secret: pi.client_secret });
@@ -88,17 +83,17 @@ async function handleCreateIntent(req, res) {
   }
 }
 
-// Ambas rutas válidas en PROD/LOCAL
+// Rutas oficiales
 app.post("/api/payments/create-intent", handleCreateIntent);
-app.post("/payments/create-intent", handleCreateIntent); // sin /api (para el stub)
+app.post("/payments/create-intent", handleCreateIntent);
+
+// Aliases para compatibilidad con el frontend (/orders/...)
+app.post("/api/orders/create-intent", handleCreateIntent);
+app.post("/orders/create-intent", handleCreateIntent);
 
 // ---- Static (sirve /public) ----
-// Si ponés un archivo public/payments-test.html queda disponible en /payments-test.html
+// Si ponés public/payments-test.html: /payments-test.html
 app.use(express.static(path.join(__dirname, "public")));
-
-// ---- (Opcional) Acá irían tus routers reales ----
-// import authRouter from "./src/routes/auth.routes.js"; app.use("/api/auth", authRouter);
-// etc.
 
 // ---- Mongo + Listen ----
 const PORT = process.env.PORT || 4020;
