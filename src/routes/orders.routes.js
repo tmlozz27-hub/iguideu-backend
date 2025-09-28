@@ -17,7 +17,7 @@ router.get("/", listOrders);
 // GET /api/orders/by-pi/:paymentIntentId → buscar por PaymentIntent
 router.get("/by-pi/:paymentIntentId", getOrderByPaymentIntent);
 
-// GET /api/orders/:id → ver una order por ID (24 hex, ObjectId)
+// GET /api/orders/:id → ver una order por ID (sólo si es un ObjectId válido)
 router.get("/:id([0-9a-fA-F]{24})", getOrderById);
 
 export default router;

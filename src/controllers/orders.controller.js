@@ -70,4 +70,13 @@ export async function listOrders(req, res) {
   res.json({ page, limit, total, items });
 }
 
-export async function getOrderBy
+export async function getOrderByPaymentIntent(req, res) {
+  try {
+    const { paymentIntentId } = req.params;
+    const order = await Order.findOne({ paymentIntentId });
+    if (!order) return res.status(404).json({ error: "Order no encontrada para ese PaymentIntent" });
+    res.json(order);
+  } catch {
+    res.status(400).json({ error: "paymentIntentId inválido" });
+  }
+}

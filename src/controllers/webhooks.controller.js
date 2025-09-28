@@ -62,7 +62,7 @@ export async function stripeWebhook(req, res) {
         break;
       }
       default:
-        // Otros eventos si querés loguearlos
+        // otros eventos opcionales
         break;
     }
     res.json({ received: true });
@@ -71,4 +71,3 @@ export async function stripeWebhook(req, res) {
     res.status(500).send("Error interno");
   }
 }
-
