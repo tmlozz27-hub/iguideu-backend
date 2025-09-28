@@ -14,11 +14,10 @@ router.post("/create-intent", createPaymentIntent);
 // GET /api/orders → listar (paginado ?page=&limit=)
 router.get("/", listOrders);
 
-// ⚠️ IMPORTANTE: declarar /by-pi ANTES de /:id para evitar colisión de rutas
 // GET /api/orders/by-pi/:paymentIntentId → buscar por PaymentIntent
 router.get("/by-pi/:paymentIntentId", getOrderByPaymentIntent);
 
-// GET /api/orders/:id → ver una order por ID
-router.get("/:id", getOrderById);
+// GET /api/orders/:id → ver una order por ID (24 hex, ObjectId)
+router.get("/:id([0-9a-fA-F]{24})", getOrderById);
 
 export default router;
