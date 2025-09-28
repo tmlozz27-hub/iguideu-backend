@@ -1,26 +1,29 @@
-// src/models/order.model.js
 import mongoose from "mongoose";
 
-const orderSchema = new mongoose.Schema(
+const OrderSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    guideId: { type: mongoose.Schema.Types.ObjectId, ref: "Guide" },
-
-    amount: { type: Number, required: true }, // en centavos
+    amount: { type: Number, required: true, min: 1 }, // centavos
     currency: { type: String, default: "usd" },
-    description: { type: String },
-
-    paymentIntentId: { type: String, required: true, index: true },
     status: {
       type: String,
-      enum: ["pending", "succeeded", "failed"],
-      default: "pending",
-      index: true,
+      enum: [
+        "created",
+        "requires_payment_method",
+        "requires_confirmation",
+        "requires_action",
+        "processing",
+        "succeeded",
+        "canceled",
+        "failed",
+        "pending",
+      ],
+      default: "created",
     },
-    // opcional: datos mínimos de cliente
-    email: { type: String },
+    paymentIntentId: { type: String, required: true, index: true, unique: true },
+    metadata: { type: Object, default: {} }, // { bookingId, guideId, userId, ... }
   },
   { timestamps: true }
 );
 
-export default mongoose.model("Order", orderSchema);
+export default mongoose.model("Order", OrderSchema);
+
