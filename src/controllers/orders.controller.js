@@ -15,6 +15,7 @@ export async function createPaymentIntent(req, res) {
       return res.status(500).json({ error: "Stripe no configurado (STRIPE_SECRET_KEY faltante)" });
     }
 
+    // 1) Crear PaymentIntent en Stripe
     const pi = await stripe.paymentIntents.create({
       amount,
       currency,
@@ -22,6 +23,7 @@ export async function createPaymentIntent(req, res) {
       metadata,
     });
 
+    // 2) Guardar Order en Mongo
     const order = await Order.create({
       amount,
       currency,
@@ -30,6 +32,7 @@ export async function createPaymentIntent(req, res) {
       metadata,
     });
 
+    // 3) Responder al cliente
     return res.status(201).json({
       ok: true,
       orderId: order._id,
@@ -49,7 +52,7 @@ export async function getOrderById(req, res) {
     const order = await Order.findById(id);
     if (!order) return res.status(404).json({ error: "Order no encontrada" });
     res.json(order);
-  } catch (err) {
+  } catch {
     res.status(400).json({ error: "ID inválido" });
   }
 }
@@ -66,3 +69,5 @@ export async function listOrders(req, res) {
 
   res.json({ page, limit, total, items });
 }
+
+export async function getOrderBy
