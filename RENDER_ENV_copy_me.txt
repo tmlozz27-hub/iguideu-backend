@@ -1,0 +1,11 @@
+NODE_ENV=production
+PORT=4020
+CORS_ORIGIN=https://TU_FRONTEND_EN_PROD
+
+MONGO_URI=mongodb+srv://YOUR_ATLAS_USER:YOUR_ATLAS_PASS@iguideu-db.sfgtfz8.mongodb.net/iguideu?retryWrites=true&w=majority&appName=iguideu-db
+
+PAYMENTS_PROVIDER=stripe
+STRIPE_SECRET_KEY=sk_test_coloca_tu_clave_completa_aqui
+STRIPE_WEBHOOK_SECRET=
+
+LOG_LEVEL=info

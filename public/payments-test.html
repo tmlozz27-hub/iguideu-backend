@@ -1,52 +1,30 @@
-﻿<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <title>Pago - Stub Test</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body{font-family:system-ui,Segoe UI,Arial;max-width:720px;margin:32px auto;padding:0 16px}
-    h1{font-size:20px;margin:0 0 12px}
-    label,input,button{font-size:16px}
-    .row{margin:8px 0}
-    pre{background:#111;color:#0f0;padding:12px;border-radius:8px;white-space:pre-wrap}
-  </style>
-</head>
-<body>
-  <h1>Prueba de pago (stub)</h1>
-  <div class="row">
-    <label>Amount (cents): </label>
-    <input id="amount" type="number" value="1999" />
-  </div>
-  <div class="row">
-    <label>Currency: </label>
-    <input id="currency" value="usd" />
-  </div>
-  <div class="row">
-    <button id="btn">Crear Payment Intent (stub)</button>
-  </div>
-  <h3>Respuesta</h3>
-  <pre id="out"></pre>
-
-  <script>
-    const out = document.getElementById('out');
-    const btn = document.getElementById('btn');
-    btn.onclick = async () => {
-      out.textContent = 'Enviando...';
-      const amount = Number(document.getElementById('amount').value || 1999);
-      const currency = document.getElementById('currency').value || 'usd';
-      try {
-        const res = await fetch('/api/payments/intent', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ amount, currency })
-        });
-        const data = await res.json();
-        out.textContent = JSON.stringify(data, null, 2);
-      } catch (e) {
-        out.textContent = 'Error: ' + e;
-      }
+﻿
+<!doctype html><html><body>
+<h3>Prueba de pago (Stripe real)</h3>
+<label>Monto (centavos): <input id="amt" value="1999"></label><br/>
+<label>Moneda: <input id="cur" value="usd"></label><br/>
+<button id="go">Crear PaymentIntent</button>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+document.getElementById('go').onclick = async () => {
+  out.textContent = '...';
+  try {
+    const body = {
+      amount: parseInt(document.getElementById('amt').value, 10),
+      currency: document.getElementById('cur').value,
+      description: 'IGU live check'
     };
-  </script>
-</body>
-</html>
+    const r = await fetch('/payments/create-intent', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const txt = await r.text();   // <<< NO forzamos JSON
+    out.textContent = txt;
+  } catch (e) {
+    out.textContent = 'Error: ' + (e?.message || e);
+  }
+};
+</script>
+</body></html>

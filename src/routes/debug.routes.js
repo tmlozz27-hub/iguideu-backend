@@ -1,41 +1,19 @@
-// src/routes/debug.routes.js (CommonJS, tolerante sin Mongo)
-const express = require('express');
+﻿import { Router } from "express";
+const router = Router();
 
-let Booking = null;
-try {
-  Booking = require('../models/Booking'); // si existe
-} catch {
-  // sin modelo; seguimos igual
-}
+// PING: comprobar que llega tráfico
+router.get("/ping", (_req, res) => res.json({ ok: true, pong: true, t: Date.now() }));
 
-const router = express.Router();
-
-// Solo habilitado en desarrollo
-router.post('/reset', async (req, res) => {
-  if (process.env.NODE_ENV !== 'development') {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-
-  try {
-    const mongoose = safeRequire('mongoose');
-    const connected = !!(mongoose && mongoose.connection && mongoose.connection.readyState === 1);
-
-    // Sin DB o sin modelo → respondemos ok para no romper E2E
-    if (!Booking || !connected) {
-      return res.json({ ok: true, skipped: 'no_db' });
-    }
-
-    await Booking.deleteMany({});
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('DEBUG RESET ERROR:', err?.message || err);
-    // Igual devolvemos ok para que los E2E sigan
-    return res.json({ ok: true, skipped: 'reset_failed' });
-  }
+// MOCK bookings en memoria (solo DEBUG)
+const _mem = [];
+router.get("/bookings", (_req, res) => res.json({ ok: true, data: _mem }));
+router.post("/bookings", (req, res) => {
+  const { guide="g1", date, pax=1 } = req.body || {};
+  if (!date) return res.status(400).json({ ok:false, error:"date requerido" });
+  const id = "dbg_" + (_mem.length+1);
+  const b = { id, guide, date, pax };
+  _mem.push(b);
+  res.json({ ok:true, booking:b });
 });
 
-function safeRequire(mod) {
-  try { return require(mod); } catch { return null; }
-}
-
-module.exports = router;
+export default router;
