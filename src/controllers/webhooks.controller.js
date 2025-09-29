@@ -1,73 +1,100 @@
+// src/controllers/webhooks.controller.js
 import Stripe from "stripe";
 import Order from "../models/order.model.js";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "", {
-  apiVersion: "2024-06-20",
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: "2025-08-27.basil",
 });
 
-const ENDPOINT_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
+// Eventos relevantes para actualizar tu Order
+const RELEVANT = new Set([
+  "payment_intent.succeeded",
+  "payment_intent.processing",
+  "payment_intent.payment_failed",
+  "payment_intent.canceled",
+]);
 
-export async function stripeWebhook(req, res) {
-  const sig = req.headers["stripe-signature"];
-  if (!ENDPOINT_SECRET) {
-    console.error("⚠️ STRIPE_WEBHOOK_SECRET no configurado");
-    return res.status(500).send("Webhook no configurado");
+function mapPiToOrderStatus(pi) {
+  switch (pi?.status) {
+    case "succeeded":
+      return "succeeded";
+    case "processing":
+      return "processing";
+    case "requires_payment_method":
+      return "requires_payment_method";
+    case "requires_action":
+      return "requires_action";
+    case "canceled":
+      return "canceled";
+    default:
+      return pi?.status || "requires_payment_method";
   }
+}
+
+/**
+ * IMPORTANTE:
+ * - La ruta de webhooks usa express.raw({ type: "application/json" }) y setea req.rawBody.
+ * - Montar el router de webhooks ANTES de express.json() en server.js.
+ * - Validamos firma con STRIPE_WEBHOOK_SECRET (whsec_... de este endpoint TEST).
+ */
+export async function stripeWebhookHandler(req, res) {
+  const sig = req.headers["stripe-signature"];
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
   let event;
   try {
-    // req.body es RAW gracias a express.raw() en la ruta
-    event = stripe.webhooks.constructEvent(req.body, sig, ENDPOINT_SECRET);
+    event = stripe.webhooks.constructEvent(req.rawBody, sig, secret);
   } catch (err) {
-    console.error("❌ Webhook signature verification failed:", err.message);
+    console.error("[webhook] signature error:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  if (!RELEVANT.has(event.type)) {
+    return res.status(200).json({ ok: true, ignored: event.type });
+  }
+
   try {
-    switch (event.type) {
-      case "payment_intent.succeeded": {
-        const pi = event.data.object;
-        await Order.findOneAndUpdate(
-          { paymentIntentId: pi.id },
-          { status: "succeeded" },
-          { new: true }
-        );
-        break;
-      }
-      case "payment_intent.processing": {
-        const pi = event.data.object;
-        await Order.findOneAndUpdate(
-          { paymentIntentId: pi.id },
-          { status: "processing" },
-          { new: true }
-        );
-        break;
-      }
-      case "payment_intent.payment_failed": {
-        const pi = event.data.object;
-        await Order.findOneAndUpdate(
-          { paymentIntentId: pi.id },
-          { status: "failed" },
-          { new: true }
-        );
-        break;
-      }
-      case "payment_intent.canceled": {
-        const pi = event.data.object;
-        await Order.findOneAndUpdate(
-          { paymentIntentId: pi.id },
-          { status: "canceled" },
-          { new: true }
-        );
-        break;
-      }
-      default:
-        // otros eventos opcionales
-        break;
+    const pi = event.data.object; // PaymentIntent
+    const paymentIntentId = pi.id;
+    const newStatus = mapPiToOrderStatus(pi);
+
+    const update = {
+      status: newStatus,
+      updatedAt: new Date(),
+    };
+
+    if (pi.latest_charge) update.latestChargeId = pi.latest_charge;
+    if (pi.last_payment_error) {
+      update.lastError = {
+        code: pi.last_payment_error.code,
+        message: pi.last_payment_error.message,
+        type: pi.last_payment_error.type,
+      };
     }
-    res.json({ received: true });
+
+    const order = await Order.findOneAndUpdate(
+      { paymentIntentId },
+      { $set: update },
+      { new: true }
+    );
+
+    if (!order) {
+      console.warn("[webhook] Order no encontrada para PI:", paymentIntentId, "type:", event.type);
+      // 200 para no reintentar indefinidamente
+      return res.status(200).json({ ok: true, updated: false });
+    }
+
+    console.log("[webhook] Order actualizada:", {
+      id: order._id.toString(),
+      status: order.status,
+      paymentIntentId,
+      type: event.type,
+    });
+
+    return res.status(200).json({ ok: true, updated: true, status: order.status });
   } catch (err) {
-    console.error("❌ Error procesando webhook:", err);
-    res.status(500).send("Error interno");
+    console.error("[webhook] handler error:", err);
+    // 500: Stripe reintenta automáticamente
+    return res.status(500).json({ ok: false });
   }
 }
