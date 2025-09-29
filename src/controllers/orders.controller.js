@@ -6,10 +6,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-08-27.basil",
 });
 
-/**
- * POST /api/orders/create-intent
- * Crea PaymentIntent (card-only) y registra Order en MongoDB.
- */
+// POST /api/orders/create-intent
 export async function createPaymentIntentAndOrder(req, res) {
   try {
     const { amount, currency = "usd", metadata = {} } = req.body || {};
@@ -17,7 +14,7 @@ export async function createPaymentIntentAndOrder(req, res) {
       return res.status(400).json({ ok: false, error: "invalid_amount" });
     }
 
-    // Evitar métodos con redirect -> card only
+    // card-only (sin redirects)
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency,
@@ -26,7 +23,6 @@ export async function createPaymentIntentAndOrder(req, res) {
       metadata,
     });
 
-    // Guardar en Mongo
     const order = await Order.create({
       amount,
       currency,
@@ -35,7 +31,7 @@ export async function createPaymentIntentAndOrder(req, res) {
       metadata,
     });
 
-    return res.json({
+    res.json({
       ok: true,
       orderId: order._id.toString(),
       paymentIntentId: paymentIntent.id,
@@ -44,14 +40,11 @@ export async function createPaymentIntentAndOrder(req, res) {
     });
   } catch (err) {
     console.error("[createPaymentIntentAndOrder] error:", err);
-    return res.status(500).json({ ok: false, error: "stripe_or_db_error" });
+    res.status(500).json({ ok: false, error: "stripe_or_db_error" });
   }
 }
 
-/**
- * GET /api/orders
- * Listado paginado (desc) por createdAt
- */
+// GET /api/orders
 export async function listOrders(req, res) {
   try {
     const page = Math.max(parseInt(req.query.page ?? "1", 10), 1);
@@ -63,46 +56,40 @@ export async function listOrders(req, res) {
       Order.countDocuments(),
     ]);
 
-    return res.json({ page, limit, total, items });
+    res.json({ page, limit, total, items });
   } catch (err) {
     console.error("[listOrders] error:", err);
-    return res.status(500).json({ ok: false, error: "db_error" });
+    res.status(500).json({ ok: false, error: "db_error" });
   }
 }
 
-/**
- * GET /api/orders/:id  (ObjectId)
- */
+// GET /api/orders/:id
 export async function getOrderById(req, res) {
   try {
     const { id } = req.params;
     const order = await Order.findById(id).lean();
     if (!order) return res.status(404).json({ ok: false, error: "not_found" });
-    return res.json(order);
+    res.json(order);
   } catch (err) {
     console.error("[getOrderById] error:", err);
-    return res.status(500).json({ ok: false, error: "db_error" });
+    res.status(500).json({ ok: false, error: "db_error" });
   }
 }
 
-/**
- * GET /api/orders/by-pi/:paymentIntentId
- */
-export async function getOrderByPaymentIntentId(req, res) { // ✅ export que faltaba
+// GET /api/orders/by-pi/:paymentIntentId
+export async function getOrderByPaymentIntentId(req, res) {
   try {
     const { paymentIntentId } = req.params;
     const order = await Order.findOne({ paymentIntentId }).lean();
     if (!order) return res.status(404).json({ ok: false, error: "not_found" });
-    return res.json(order);
+    res.json(order);
   } catch (err) {
     console.error("[getOrderByPaymentIntentId] error:", err);
-    return res.status(500).json({ ok: false, error: "db_error" });
+    res.status(500).json({ ok: false, error: "db_error" });
   }
 }
 
-/**
- * (Opcional) GET /api/orders/stats
- */
+// GET /api/orders/stats
 export async function getOrdersStats(_req, res) {
   try {
     const now = new Date();
@@ -131,7 +118,7 @@ export async function getOrdersStats(_req, res) {
     const byStatus = Object.fromEntries(byStatusAgg.map(i => [i._id, i.count]));
     const totalAmountSucceeded = succAgg[0]?.amount ?? 0;
 
-    return res.json({
+    res.json({
       generatedAt: now.toISOString(),
       total,
       byStatus,
@@ -147,6 +134,6 @@ export async function getOrdersStats(_req, res) {
     });
   } catch (err) {
     console.error("[getOrdersStats] error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
+    res.status(500).json({ ok: false, error: "internal_error" });
   }
 }
