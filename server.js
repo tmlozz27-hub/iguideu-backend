@@ -5,7 +5,9 @@ import cors from "cors";
 
 import ordersRouter from "./src/routes/orders.routes.js";
 import webhooksRouter from "./src/routes/webhooks.routes.js";
-import { getOrdersStats } from "./src/controllers/orders.controller.js"; // ✅ import stats
+
+// ✅ Importamos el modelo directo para calcular stats acá mismo
+import Order from "./src/models/order.model.js";
 
 const app = express();
 app.use(cors());
@@ -29,8 +31,87 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// 🟩 BYPASS: stats POR FUERA del router y ANTES de /api/orders
-app.get("/api/_orders_stats", getOrdersStats);
+/**
+ * 🟢 BYPASS: Stats fuera del router
+ * GET /api/_orders_stats
+ */
+app.get("/api/_orders_stats", async (_req, res) => {
+  try {
+    const now = new Date();
+    const from24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const from7d  = new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000);
+
+    const [ total, byStatusAgg ] = await Promise.all([
+      Order.countDocuments(),
+      Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+    ]);
+    const byStatus = byStatusAgg.reduce((acc, i) => { acc[i._id] = i.count; return acc; }, {});
+
+    const sumSucceededAgg = await Order.aggregate([
+      { $match: { status: "succeeded" } },
+      { $group: { _id: null, amount: { $sum: "$amount" } } },
+      { $project: { _id: 0, amount: 1 } },
+    ]);
+    const totalAmountSucceeded = sumSucceededAgg[0]?.amount || 0;
+
+    const [ last24hAgg, last24hSucceededAgg ] = await Promise.all([
+      Order.aggregate([
+        { $match: { createdAt: { $gte: from24h } } },
+        { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: "$amount" } } },
+        { $project: { _id: 0, count: 1, amount: 1 } },
+      ]),
+      Order.aggregate([
+        { $match: { createdAt: { $gte: from24h }, status: "succeeded" } },
+        { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: "$amount" } } },
+        { $project: { _id: 0, count: 1, amount: 1 } },
+      ]),
+    ]);
+    const last24h = {
+      count:  last24hAgg[0]?.count  || 0,
+      amount: last24hAgg[0]?.amount || 0,
+      succeeded: {
+        count:  last24hSucceededAgg[0]?.count  || 0,
+        amount: last24hSucceededAgg[0]?.amount || 0,
+      }
+    };
+
+    const last7dAgg = await Order.aggregate([
+      { $match: { createdAt: { $gte: from7d }, status: "succeeded" } },
+      {
+        $group: {
+          _id: {
+            y: { $year: "$createdAt" },
+            m: { $month: "$createdAt" },
+            d: { $dayOfMonth: "$createdAt" },
+          },
+          count:  { $sum: 1 },
+          amount: { $sum: "$amount" },
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          date: { $dateFromParts: { year: "$_id.y", month: "$_id.m", day: "$_id.d" } },
+          count: 1,
+          amount: 1,
+        }
+      },
+      { $sort: { date: 1 } },
+    ]);
+
+    res.json({
+      generatedAt: now.toISOString(),
+      total,
+      byStatus,
+      totalAmountSucceeded,
+      last24h,
+      last7dSucceededDaily: last7dAgg,
+    });
+  } catch (err) {
+    console.error("[_orders_stats] error:", err);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
 
 // API (router)
 app.use("/api/orders", ordersRouter);
@@ -65,7 +146,7 @@ app.get("/api/_routes", (req, res) => {
       });
     }
   });
-  res.json(out);
+  res.json({ routes: out, Count: out.length });
 });
 
 // DB + server
@@ -89,3 +170,4 @@ async function start() {
 }
 
 start();
+
