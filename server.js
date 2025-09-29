@@ -1,12 +1,11 @@
-﻿
-import "dotenv/config";
+﻿import "dotenv/config";
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 
 import ordersRouter from "./src/routes/orders.routes.js";
 import webhooksRouter from "./src/routes/webhooks.routes.js";
-import { getOrdersStats } from "./src/controllers/orders.controller.js"; // ✅ import directo
+import { getOrdersStats } from "./src/controllers/orders.controller.js"; // ✅ import stats
 
 const app = express();
 app.use(cors());
@@ -30,7 +29,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// 🟩 BYPASS DEFINITIVO: stats fuera del router y ANTES de montar /api/orders
+// 🟩 BYPASS: stats POR FUERA del router y ANTES de /api/orders
 app.get("/api/_orders_stats", getOrdersStats);
 
 // API (router)
