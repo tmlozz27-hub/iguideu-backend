@@ -1,123 +1,81 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import Stripe from "stripe";
 
 import ordersRouter from "./src/routes/orders.routes.js";
 import webhooksRouter from "./src/routes/webhooks.routes.js";
-import Order from "./src/models/order.model.js";
 
 const app = express();
-app.use(cors());
 
-// Webhooks (raw) antes del json
-app.use("/api/webhooks", webhooksRouter);
+// ===== Stripe (compartido en app) =====
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.warn("⚠️ STRIPE_SECRET_KEY no definido (solo podrás usar endpoints sin Stripe)");
+}
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+app.set("stripe", stripe);
+
+// ===== Seguridad base =====
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
+
+// CORS estricto: toma de env (coma separada) o fallback local
+const allowed = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
+  : ["http://127.0.0.1:5177"];
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Permitir tools / curl (sin origin) y los orígenes whitelisted
+      if (!origin || allowed.includes(origin)) return cb(null, true);
+      return cb(new Error("CORS blocked"));
+    },
+    credentials: false,
+  })
+);
+
+// ===== Rate Limits (suaves) =====
+const ordersLimiter = rateLimit({ windowMs: 60_000, max: 60 });
+const webhookLimiter = rateLimit({ windowMs: 60_000, max: 120 });
+
+// ⚠️ Webhooks (RAW) antes del json global
+app.use("/api/webhooks", webhookLimiter, webhooksRouter);
 
 // JSON global
 app.use(express.json());
 
 // Health
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     env: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
     hasMongoUri: !!process.env.MONGO_URI,
-    dbState: mongoose.connection.readyState,
+    dbState: mongoose.connection.readyState, // 0,1,2,3
     payments: "stripe",
     hasStripeKey: !!process.env.STRIPE_SECRET_KEY,
   });
 });
 
-// === DIAGNÓSTICO VISUAL ===
-app.get("/api/_whoami", (_req, res) => {
-  const routes = [];
-  app._router.stack.forEach((m) => {
-    if (m.route?.path) routes.push(m.route.path);
-    else if (m.name === "router" && m.handle?.stack) {
-      m.handle.stack.forEach((s) => s.route?.path && routes.push(s.route.path));
-    }
-  });
+// API
+app.use("/api/orders", ordersLimiter, ordersRouter);
+
+// Debug
+app.get("/api/_ping", (req, res) => {
   res.json({
+    ok: true,
+    ts: new Date().toISOString(),
     commit: process.env.RENDER_GIT_COMMIT || "unknown",
-    node: process.version,
-    entry: "server.js",
-    routesCount: routes.length,
-    sample: routes.slice(0, 25),
   });
 });
 
-// BYPASS: stats fuera del router y ANTES de /api/orders
-app.get("/api/_orders_stats", async (_req, res) => {
-  try {
-    const now = new Date();
-    const from24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const from7d  = new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000);
-
-    const [ total, byStatusAgg ] = await Promise.all([
-      Order.countDocuments(),
-      Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
-    ]);
-    const byStatus = Object.fromEntries(byStatusAgg.map(i => [i._id, i.count]));
-
-    const sumSucc = await Order.aggregate([
-      { $match: { status: "succeeded" } },
-      { $group: { _id: null, amount: { $sum: "$amount" } } },
-      { $project: { _id: 0, amount: 1 } },
-    ]);
-    const totalAmountSucceeded = sumSucc[0]?.amount || 0;
-
-    const last24hAgg = await Order.aggregate([
-      { $match: { createdAt: { $gte: from24h } } },
-      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: "$amount" } } },
-      { $project: { _id: 0, count: 1, amount: 1 } },
-    ]);
-    const last24hSucc = await Order.aggregate([
-      { $match: { createdAt: { $gte: from24h }, status: "succeeded" } },
-      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: "$amount" } } },
-      { $project: { _id: 0, count: 1, amount: 1 } },
-    ]);
-
-    const last7d = await Order.aggregate([
-      { $match: { createdAt: { $gte: from7d }, status: "succeeded" } },
-      { $group: {
-          _id: { y: { $year: "$createdAt" }, m: { $month: "$createdAt" }, d: { $dayOfMonth: "$createdAt" } },
-          count: { $sum: 1 }, amount: { $sum: "$amount" }
-      }},
-      { $project: {
-          _id: 0,
-          date: { $dateFromParts: { year: "$_id.y", month: "$_id.m", day: "$_id.d" } },
-          count: 1, amount: 1
-      }},
-      { $sort: { date: 1 } },
-    ]);
-
-    res.json({
-      generatedAt: now.toISOString(),
-      total,
-      byStatus,
-      totalAmountSucceeded,
-      last24h: {
-        count: last24hAgg[0]?.count || 0,
-        amount: last24hAgg[0]?.amount || 0,
-        succeeded: {
-          count:  last24hSucc[0]?.count || 0,
-          amount: last24hSucc[0]?.amount || 0,
-        }
-      },
-      last7dSucceededDaily: last7d,
-    });
-  } catch (err) {
-    console.error("[_orders_stats] error:", err);
-    res.status(500).json({ ok: false, error: "internal_error" });
-  }
-});
-
-// API principal
-app.use("/api/orders", ordersRouter);
-
-// Debug rutas
-app.get("/api/_routes", (_req, res) => {
+app.get("/api/_routes", (req, res) => {
   const out = [];
   app._router.stack.forEach((m) => {
     if (m.route?.path) {

@@ -1,3 +1,4 @@
+
 // src/controllers/orders.controller.js
 import Stripe from "stripe";
 import Order from "../models/order.model.js";
@@ -5,6 +6,16 @@ import Order from "../models/order.model.js";
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-08-27.basil",
 });
+
+// Utilidad: parseo de fechas YYYY-MM-DD (UTC)
+function parseDateYYYYMMDD(s) {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 0, 0, 0));
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
 
 // POST /api/orders/create-intent
 export async function createPaymentIntentAndOrder(req, res) {
@@ -44,19 +55,34 @@ export async function createPaymentIntentAndOrder(req, res) {
   }
 }
 
-// GET /api/orders
+// GET /api/orders  (con filtros)
 export async function listOrders(req, res) {
   try {
-    const page = Math.max(parseInt(req.query.page ?? "1", 10), 1);
+    const page  = Math.max(parseInt(req.query.page  ?? "1", 10), 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit ?? "10", 10), 1), 50);
-    const skip = (page - 1) * limit;
+    const skip  = (page - 1) * limit;
+
+    const { status, from, to, pi } = req.query;
+
+    const q = {};
+    if (status) q.status = status;
+    if (pi) q.paymentIntentId = pi;
+
+    // Rango de fechas por createdAt (inclusive)
+    const dFrom = parseDateYYYYMMDD(from);
+    const dTo   = parseDateYYYYMMDD(to);
+    if (dFrom || dTo) {
+      q.createdAt = {};
+      if (dFrom) q.createdAt.$gte = dFrom;
+      if (dTo)   q.createdAt.$lt  = new Date(dTo.getTime() + 24 * 60 * 60 * 1000); // to exclusivo +1 día
+    }
 
     const [items, total] = await Promise.all([
-      Order.find().sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-      Order.countDocuments(),
+      Order.find(q).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Order.countDocuments(q),
     ]);
 
-    res.json({ page, limit, total, items });
+    res.json({ page, limit, total, filters: { status, from, to, pi }, items });
   } catch (err) {
     console.error("[listOrders] error:", err);
     res.status(500).json({ ok: false, error: "db_error" });
@@ -89,9 +115,15 @@ export async function getOrderByPaymentIntentId(req, res) {
   }
 }
 
-// GET /api/orders/stats
-export async function getOrdersStats(_req, res) {
+// GET /api/orders/stats  (protegido por x-admin-key)
+export async function getOrdersStats(req, res) {
   try {
+    const provided = req.headers["x-admin-key"];
+    const expected = process.env.ADMIN_API_KEY;
+    if (!expected || provided !== expected) {
+      return res.status(401).json({ ok: false, error: "unauthorized" });
+    }
+
     const now = new Date();
     const from24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
