@@ -1,10 +1,12 @@
-﻿import "dotenv/config";
+﻿
+import "dotenv/config";
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 
 import ordersRouter from "./src/routes/orders.routes.js";
 import webhooksRouter from "./src/routes/webhooks.routes.js";
+import { getOrdersStats } from "./src/controllers/orders.controller.js"; // 👈 NUEVO
 
 const app = express();
 app.use(cors());
@@ -30,6 +32,9 @@ app.get("/api/health", (req, res) => {
 
 // API
 app.use("/api/orders", ordersRouter);
+
+// ✅ Ruta directa (bypass) por si el router no se actualizó en deploy
+app.get("/api/orders/stats", getOrdersStats);
 
 // Debug
 app.get("/api/_ping", (req, res) => {
@@ -85,5 +90,3 @@ async function start() {
 }
 
 start();
-// touch 2025-09-28T23:47:37.8278040-03:00
-// touch 2025-09-28T23:52:37.8916903-03:00
