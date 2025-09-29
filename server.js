@@ -1,5 +1,36 @@
-﻿// === DIAGNÓSTICO VISUAL ===
-app.get("/api/_whoami", (req, res) => {
+﻿import "dotenv/config";
+import express from "express";
+import mongoose from "mongoose";
+import cors from "cors";
+
+import ordersRouter from "./src/routes/orders.routes.js";
+import webhooksRouter from "./src/routes/webhooks.routes.js";
+import Order from "./src/models/order.model.js";
+
+const app = express();
+app.use(cors());
+
+// Webhooks (raw) antes del json
+app.use("/api/webhooks", webhooksRouter);
+
+// JSON global
+app.use(express.json());
+
+// Health
+app.get("/api/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    env: process.env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+    hasMongoUri: !!process.env.MONGO_URI,
+    dbState: mongoose.connection.readyState,
+    payments: "stripe",
+    hasStripeKey: !!process.env.STRIPE_SECRET_KEY,
+  });
+});
+
+// === DIAGNÓSTICO VISUAL ===
+app.get("/api/_whoami", (_req, res) => {
   const routes = [];
   app._router.stack.forEach((m) => {
     if (m.route?.path) routes.push(m.route.path);
@@ -12,13 +43,11 @@ app.get("/api/_whoami", (req, res) => {
     node: process.version,
     entry: "server.js",
     routesCount: routes.length,
-    sample: routes.slice(0, 20),
+    sample: routes.slice(0, 25),
   });
 });
 
-// ⚠️ LOG explícito para ver en Render logs
-console.log("🟩 Montando BYPASS /api/_orders_stats");
-
+// BYPASS: stats fuera del router y ANTES de /api/orders
 app.get("/api/_orders_stats", async (_req, res) => {
   try {
     const now = new Date();
@@ -83,3 +112,53 @@ app.get("/api/_orders_stats", async (_req, res) => {
     res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
+
+// API principal
+app.use("/api/orders", ordersRouter);
+
+// Debug rutas
+app.get("/api/_routes", (_req, res) => {
+  const out = [];
+  app._router.stack.forEach((m) => {
+    if (m.route?.path) {
+      out.push({ path: m.route.path, methods: Object.keys(m.route.methods) });
+    } else if (m.name === "router" && m.regexp && m.handle?.stack) {
+      const base = (m.regexp.source || "")
+        .replace("^\\", "")
+        .replace("\\/?(?=\\/|$)", "")
+        .replace(/\\\//g, "/")
+        .replace(/\$$/, "");
+      m.handle.stack.forEach((s) => {
+        if (s.route?.path) {
+          out.push({
+            path: `/${base}${s.route.path}`.replace(/\/{2,}/g, "/"),
+            methods: Object.keys(s.route.methods),
+          });
+        }
+      });
+    }
+  });
+  res.json({ routes: out, Count: out.length });
+});
+
+// DB + server
+const PORT = process.env.PORT || 3000;
+
+async function start() {
+  try {
+    if (process.env.MONGO_URI) {
+      await mongoose.connect(process.env.MONGO_URI);
+      console.log("✅ MongoDB conectado");
+    } else {
+      console.warn("⚠️ MONGO_URI no definido, iniciando sin DB.");
+    }
+    app.listen(PORT, "0.0.0.0", () =>
+      console.log(`✅ Express ON :${PORT} NODE_ENV=${process.env.NODE_ENV || "dev"}`)
+    );
+  } catch (err) {
+    console.error("❌ Error al iniciar:", err);
+    process.exit(1);
+  }
+}
+
+start();
