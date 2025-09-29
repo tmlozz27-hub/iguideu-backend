@@ -6,7 +6,7 @@ import cors from "cors";
 
 import ordersRouter from "./src/routes/orders.routes.js";
 import webhooksRouter from "./src/routes/webhooks.routes.js";
-import { getOrdersStats } from "./src/controllers/orders.controller.js"; // 👈 NUEVO
+import { getOrdersStats } from "./src/controllers/orders.controller.js"; // ✅ import directo
 
 const app = express();
 app.use(cors());
@@ -24,20 +24,20 @@ app.get("/api/health", (req, res) => {
     env: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
     hasMongoUri: !!process.env.MONGO_URI,
-    dbState: mongoose.connection.readyState, // 0,1,2,3
+    dbState: mongoose.connection.readyState,
     payments: "stripe",
     hasStripeKey: !!process.env.STRIPE_SECRET_KEY,
   });
 });
 
-// API
+// 🟩 BYPASS DEFINITIVO: stats fuera del router y ANTES de montar /api/orders
+app.get("/api/_orders_stats", getOrdersStats);
+
+// API (router)
 app.use("/api/orders", ordersRouter);
 
-// ✅ Ruta directa (bypass) por si el router no se actualizó en deploy
-app.get("/api/orders/stats", getOrdersStats);
-
 // Debug
-app.get("/api/_ping", (req, res) => {
+app.get("/api/_ping", (_req, res) => {
   res.json({
     ok: true,
     ts: new Date().toISOString(),
