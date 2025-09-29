@@ -1,4 +1,3 @@
-
 // src/routes/orders.routes.js
 import express from "express";
 import {
@@ -13,7 +12,7 @@ const router = express.Router();
 
 router.post("/create-intent", createPaymentIntent);
 
-// ✅ Ruta de stats
+// ✅ declarar /stats ANTES que :id
 router.get("/stats", getOrdersStats);
 
 // Listado
@@ -22,8 +21,7 @@ router.get("/", listOrders);
 // by-pi ANTES de :id
 router.get("/by-pi/:paymentIntentId", getOrderByPaymentIntentId);
 
-// :id restringido a ObjectId para evitar conflictos
+// :id restringido a ObjectId para no chocar con rutas estáticas
 router.get("/:id([a-f\\d]{24})", getOrderById);
 
 export default router;
-
