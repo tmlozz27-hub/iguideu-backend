@@ -12,7 +12,7 @@ const router = express.Router();
 
 router.post("/create-intent", createPaymentIntent);
 
-// ✅ declarar /stats ANTES que :id
+// ✅ /stats DEBE ir ANTES de :id
 router.get("/stats", getOrdersStats);
 
 // Listado
@@ -21,7 +21,7 @@ router.get("/", listOrders);
 // by-pi ANTES de :id
 router.get("/by-pi/:paymentIntentId", getOrderByPaymentIntentId);
 
-// :id restringido a ObjectId para no chocar con rutas estáticas
+// :id restringido a ObjectId para no chocar con /stats o /by-pi
 router.get("/:id([a-f\\d]{24})", getOrderById);
 
 export default router;
