@@ -1,27 +1,28 @@
 // src/routes/orders.routes.js
-import express from "express";
+import { Router } from "express";
 import {
-  createPaymentIntent,
+  createPaymentIntentAndOrder,
   listOrders,
   getOrderById,
-  getOrderByPaymentIntentId,
-  getOrdersStats,
+  getOrderByPaymentIntentId, // ✅ existe en el controller
+  getOrdersStats,            // opcional
 } from "../controllers/orders.controller.js";
 
-const router = express.Router();
-
-router.post("/create-intent", createPaymentIntent);
-
-// ✅ /stats DEBE ir ANTES de :id
-router.get("/stats", getOrdersStats);
+const router = Router();
 
 // Listado
 router.get("/", listOrders);
 
-// by-pi ANTES de :id
+// (Opcional) stats dentro del router
+router.get("/stats", getOrdersStats);
+
+// ⚠️ Importante: declarar by-pi ANTES de /:id
 router.get("/by-pi/:paymentIntentId", getOrderByPaymentIntentId);
 
-// :id restringido a ObjectId para no chocar con /stats o /by-pi
-router.get("/:id([a-f\\d]{24})", getOrderById);
+// :id restringido a ObjectId para no pisar otras rutas
+router.get("/:id([0-9a-fA-F]{24})", getOrderById);
+
+// Crear intent + order
+router.post("/create-intent", createPaymentIntentAndOrder);
 
 export default router;
