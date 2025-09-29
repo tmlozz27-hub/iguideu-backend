@@ -1,29 +1,24 @@
 {
   "name": "iguideu-backend-fresh",
   "version": "1.0.0",
-  "description": "Backend I GUIDE U - Express + MongoDB + Stripe",
+  "private": true,
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon --watch src --watch server.js server.js"
+    "dev": "nodemon server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=18.17 <=22.18"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "mongoose": "^8.6.1",
-    "stripe": "^16.7.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.10"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "MIT"
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "mongoose": "^8.6.0",
+    "stripe": "^16.5.0"
+  }
 }
-
 
