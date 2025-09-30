@@ -6,6 +6,10 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
+
+// --- Middleware admin ---
+import adminAuth from "./src/middleware/adminAuth.js";
 
 import paymentsStub from "./src/routes/payments.stub.js";
 import paymentsRouter from "./src/routes/payments.routes.js";
@@ -77,7 +81,6 @@ app.get("/api/health", (_req, res) => {
 });
 
 // --- Whoami diag ---
-import crypto from "crypto";
 app.get("/api/_whoami", (_req, res) => {
   let hash16 = null;
   if (process.env.ADMIN_API_KEY) {
@@ -97,6 +100,17 @@ app.get("/api/_whoami", (_req, res) => {
 // --- Routers ---
 app.use("/api/orders", ordersRouter);
 app.use("/api/payments", useStripe ? paymentsRouter : paymentsStub);
+
+// --- Ruta protegida con adminAuth ---
+app.get("/api/orders/stats", adminAuth, async (_req, res) => {
+  res.json({
+    ok: true,
+    stats: {
+      totalOrders: 42,
+      totalRevenue: 999.99,
+    },
+  });
+});
 
 // --- Start ---
 app.listen(PORT, HOST, () => {
