@@ -1,10 +1,11 @@
-# iguideu-backend
+# backend-iguideu-9 — Pagos con Stripe (PI + Webhook + Refunds)
 
-- Node + Express + MongoDB
-- Endpoints clave:
-  - `GET /api/health`
-  - `POST /api/auth/signup`, `POST /api/auth/login`
-  - `GET /api/guides`
-  - `POST /api/bookings`
-  - `POST /api/payments/authorize/:id` | `POST /api/bookings/:id/payments/authorize`
-  - `POST /api/payments/capture/:id`   | `POST /api/bookings/:id/payments/capture`
+## Requisitos
+- Node 20.12.2 (nvm)
+- Stripe CLI (≥ 1.31.0)
+- Cuenta Stripe (modo test)
+- MongoDB Atlas
+
+---
+
+## Variables de entorno (`.env`)

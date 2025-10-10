@@ -1,17 +1,27 @@
 import mongoose from "mongoose";
 
+const RefundSchema = new mongoose.Schema(
+  {
+    id: String,
+    amount: Number,
+    currency: String,
+    status: String,
+    created: Number,
+  },
+  { _id: false }
+);
+
 const OrderSchema = new mongoose.Schema(
   {
-    amount: { type: Number, required: true }, // en centavos
-    currency: { type: String, default: "usd" },
-    paymentIntentId: { type: String, required: true, index: true },
-    status: {
-      type: String,
-      enum: ["created", "pending", "processing", "requires_action", "requires_confirmation", "succeeded", "failed"],
-      default: "created",
-      index: true,
-    },
-    meta: { type: Object, default: {} },
+    paymentIntentId: { type: String, index: true, unique: true },
+    amount: Number,
+    currency: String,
+    status: String, // requires_payment_method | processing | succeeded | partially_refunded | refunded | canceled
+    metadata: { type: Object, default: {} },
+
+    // 👇 nuevos
+    refundedAmount: { type: Number, default: 0 }, // en cents
+    refunds: { type: [RefundSchema], default: [] },
   },
   { timestamps: true }
 );
