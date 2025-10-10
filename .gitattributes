@@ -1,1 +1,10 @@
-﻿* text=auto
+﻿# Normaliza a LF para código
+* text=auto eol=lf
+
+# Scripts de Windows con CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Shell scripts con LF
+*.sh  text eol=lf
+
