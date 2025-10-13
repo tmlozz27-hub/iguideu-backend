@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -53,3 +54,84 @@ mongoose
       console.log(`✅ Express ON http://127.0.0.1:${PORT}`);
     });
   });
+=======
+﻿// ===== BACKEND I GUIDE U 10 - SERVER.JS (Render + Mongo + Stripe + Webhook) =====
+import "dotenv/config";
+import express from "express";
+import mongoose from "mongoose";
+import cors from "cors";
+import Stripe from "stripe";
+
+const app = express();
+const PORT = process.env.PORT || 4020;
+
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || "";
+const stripeKey = process.env.STRIPE_SECRET_KEY || "";
+const stripe = stripeKey ? new Stripe(stripeKey) : null;
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
+let dbReady = 0;
+
+// --- WEBHOOK STRIPE (antes del JSON parser) ---
+app.post("/api/payments/webhook", express.raw({ type: "application/json" }), (req, res) => {
+  try {
+    if (!stripe || !webhookSecret) return res.sendStatus(500);
+    const sig = req.headers["stripe-signature"];
+    const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    console.log(`✅ Webhook recibido: ${event.type}`);
+    return res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Webhook error:", err.message || err);
+    return res.sendStatus(400);
+  }
+});
+
+// --- Parsers normales ---
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// --- Mongo ---
+(async () => {
+  try {
+    if (!MONGO_URI) throw new Error("Falta MONGODB_URI/MONGO_URI");
+    console.log("🔎 Conectando a Mongo:", MONGO_URI.replace(/:\/\/.*@/, "://***@"));
+    const conn = await mongoose.connect(MONGO_URI);
+    dbReady = 1;
+    console.log(`✅ MongoDB conectado: ${conn.connection.name}`);
+  } catch (err) {
+    dbReady = 0;
+    console.error("❌ Error MongoDB:", err.message);
+  }
+})();
+
+// --- Health ---
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    env: process.env.NODE_ENV,
+    dbState: dbReady,
+    hasMongoUri: !!MONGO_URI,
+    payments: "stripe",
+    hasStripeKey: !!stripeKey,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// --- Stripe: create-intent ---
+app.post("/api/payments/create-intent", async (req, res) => {
+  try {
+    if (!stripe) return res.json({ ok: false, error: "stripe_key_missing" });
+    const { amount, currency } = req.body || {};
+    if (!amount || !currency) return res.status(400).json({ ok: false, error: "amount/currency invalid" });
+    const pi = await stripe.paymentIntents.create({ amount, currency });
+    res.json({ ok: true, paymentIntentId: pi.id, clientSecret: pi.client_secret });
+  } catch (err) {
+    console.error("❌ Error create-intent:", err.message);
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`✅ Express ON (PORT=${PORT})`);
+});
+>>>>>>> 5891d35 (Backend 10: server Render-ready (Mongo + Stripe + webhook))

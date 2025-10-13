@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "backend-iguideu-9",
   "version": "1.0.0",
   "description": "Backend I GUIDE U 9 - Express + Mongo + Stripe base",
@@ -21,4 +21,4 @@
   "devDependencies": {
     "nodemon": "^3.1.4"
   }
-}
+, "engines": { "node": "20.x" } }
