@@ -1,24 +1,34 @@
-# 🪟 PS1 - SERVER (local)
-$host.ui.RawUI.WindowTitle = 'PS1 - SERVER (local)'
+﻿$Host.UI.RawUI.WindowTitle = "SERVER - iguideu"
 
-# Ir al backend
-cd C:\dev\iguideu-backend
+# Node con NVM y REFRESH de PATH (soluciona 'npm no se reconoce')
+nvm on 2>$null
+nvm use 22.20.0 2>$null
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+            [System.Environment]::GetEnvironmentVariable("Path","User")
 
-# 1) Liberar puerto 4020 por las dudas
-$p = Get-NetTCPConnection -State Listen -LocalPort 4020 -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($p) {
-  try { Stop-Process -Id $p.OwningProcess -Force } catch {}
-  Start-Sleep -Milliseconds 300
+# Diagnóstico rápido
+node -v
+where node
+where npm
+
+# Instalar deps (ci si hay lock; si falla, i normal)
+if (Test-Path .\package-lock.json) {
+  npm ci 2>$null
+  if ($LASTEXITCODE -ne 0) { npm i }
+} else {
+  npm i
 }
 
-# 2) Entorno + Node 20
-$env:PORT = '4020'
-$NVM_HOME = if ($env:NVM_HOME) { $env:NVM_HOME } else { Join-Path $env:APPDATA 'nvm' }
-$NODE_EXE = Join-Path $NVM_HOME 'v20.12.2\node.exe'
+# Evitar doble instancia en 4020 (si hay otro proceso, lo mata)
+$inUse = (netstat -ano | findstr ":4020" | Select-String "LISTENING") -ne $null
+if ($inUse) {
+  $pids = (netstat -ano | findstr ":4020" | ForEach-Object {
+    ($_ -split "\s+")[-1]
+  } | Sort-Object -Unique)
+  foreach ($pid in $pids) {
+    try { Stop-Process -Id $pid -Force } catch {}
+  }
+}
 
-# 3) (opcional) deps base
-# npm install stripe dotenv
-
-# 4) Levantar server
-& $NODE_EXE .\server.js
-
+# Levantar server
+npm run dev

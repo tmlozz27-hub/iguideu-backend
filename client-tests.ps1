@@ -1,65 +1,21 @@
-# 🪟 PS3 - CLIENT (tests E2E local)
-$host.ui.RawUI.WindowTitle = 'PS3 - CLIENT (tests)'
+﻿$Host.UI.RawUI.WindowTitle = "CLIENT - iguideu"
+$BASE = "http://127.0.0.1:4020"
 
-# 0) Base local
-$BASE = 'http://127.0.0.1:4020'
+Write-Host "`n--> GET $BASE/api/health" -ForegroundColor Cyan
+try { Invoke-RestMethod "$BASE/api/health" | Format-List } catch { Write-Host "No responde /api/health. Revisá la consola SERVER por errores." -ForegroundColor Yellow }
 
-# 0.1) Sanity health
+Write-Host "`n--> POST $BASE/api/payments/create-intent" -ForegroundColor Cyan
+$body = @{ amount = 1000; currency = "usd"; metadata = @{ source = "iguideu-13-test" } } | ConvertTo-Json
 try {
-  $health = Invoke-RestMethod "$BASE/api/health"
-  Write-Host "Health OK -> env:$($health.env) dbState:$($health.dbState)" -ForegroundColor Green
+  Invoke-RestMethod -Method POST -Uri "$BASE/api/payments/create-intent" -ContentType "application/json" -Body $body | Format-List
 } catch {
-  Write-Host "❌ Health falló. ¿Server arriba en PS1?" -ForegroundColor Red
-  throw
+  Write-Host $_.Exception.Message -ForegroundColor Yellow
 }
 
-# 1) Crear PaymentIntent
-$body = @{ amount = 1599; currency = 'usd'; metadata = @{ order = 'UI-DEMO-LOCAL' } } | ConvertTo-Json
-$pi = Invoke-RestMethod "$BASE/api/payments/intent" -Method POST -ContentType 'application/json' -Body $body
-
-if (-not $pi -or -not $pi.paymentIntentId) {
-  Write-Host "❌ No se obtuvo paymentIntentId" -ForegroundColor Red
-  throw
-}
-
-$PIID = $pi.paymentIntentId
-Write-Host "✅ PI creado: $PIID" -ForegroundColor Green
-
-# 2) Confirmar (VISA test) — necesitas STRIPE CLI logueado
-$confirmCmd = "stripe payment_intents confirm $PIID --payment-method pm_card_visa"
-Write-Host "→ Confirmando PI con Stripe CLI..." -ForegroundColor Yellow
-# Ejecutar de forma visible para ver output
-cmd /c $confirmCmd
-
-Start-Sleep -Seconds 2
-
-# 3) Ver orden (debe quedar 'succeeded')
+Write-Host "`n--> GET $BASE/api/admin/stats" -ForegroundColor Cyan
 try {
-  $order1 = Invoke-RestMethod "$BASE/api/orders/by-intent/$PIID"
-  Write-Host "✅ Orden status: $($order1.order.status)" -ForegroundColor Green
+  $headers = @{ "x-admin-key" = "changeme-admin-iguideu" }
+  Invoke-RestMethod -Headers $headers "$BASE/api/admin/stats" | Format-List
 } catch {
-  Write-Host "❌ Error obteniendo orden (succeeded). ¿Ruta expuesta /api/orders/by-intent/:id?" -ForegroundColor Red
-  throw
-}
-
-# 4) Refund parcial (USD 3.00)
-$refundPartial = @{ paymentIntentId = $PIID; amount = 300 } | ConvertTo-Json
-$ref1 = Invoke-RestMethod "$BASE/api/payments/refund" -Method POST -ContentType 'application/json' -Body $refundPartial
-Write-Host "✅ Refund parcial: $($ref1.refund.id) amount: $($ref1.refund.amount)" -ForegroundColor Green
-
-# 5) Refund total (resto)
-$refundTotal = @{ paymentIntentId = $PIID } | ConvertTo-Json
-$ref2 = Invoke-RestMethod "$BASE/api/payments/refund" -Method POST -ContentType 'application/json' -Body $refundTotal
-Write-Host "✅ Refund total: $($ref2.refund.id) amount: $($ref2.refund.amount)" -ForegroundColor Green
-
-Start-Sleep -Seconds 2
-
-# 6) Ver orden final (refunded + refunds[])
-try {
-  $order2 = Invoke-RestMethod "$BASE/api/orders/by-intent/$PIID"
-  Write-Host "✅ Orden final: $($order2.order.status) | refundedAmount: $($order2.order.refundedAmount)" -ForegroundColor Green
-  $order2 | ConvertTo-Json -Depth 10 | Out-Host
-} catch {
-  Write-Host "❌ Error obteniendo orden final." -ForegroundColor Red
-  throw
+  Write-Host $_.Exception.Message -ForegroundColor Yellow
 }
