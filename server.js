@@ -1,99 +1,89 @@
-// ===== BACKEND I GUIDE U 10 - SERVER.JS (CommonJS, Render-safe) =====
-require("dotenv/config");
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
-const Stripe = require("stripe");
+// server.js (ESM)
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
+import mongoose from 'mongoose';
 
 const app = express();
-const PORT = process.env.PORT || 4020;
 
-const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || "";
-const stripeKey = process.env.STRIPE_SECRET_KEY || "";
-const stripe = stripeKey ? new Stripe(stripeKey) : null;
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
-let dbReady = 0;
+// ---- Config
+const PORT = Number(process.env.PORT || 4020);
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'iguideu_admin_2025';
 
-// Webhook: debe ir ANTES del JSON parser
-app.post("/api/payments/webhook", express.raw({ type: "application/json" }), (req, res) => {
-  try {
-    if (!stripe || !webhookSecret) return res.sendStatus(500);
-    const sig = req.headers["stripe-signature"];
-    const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-    console.log(`✅ Webhook recibido: ${event.type}`);
-    return res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Webhook error:", err.message || err);
-    return res.sendStatus(400);
-  }
+// CORS (lista separada por comas)
+const rawOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // allow curl/postman
+    if (rawOrigins.length === 0 || rawOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error('CORS blocked: ' + origin));
+  },
+  credentials: true,
+};
+app.use(cors(corsOptions));
+app.use(helmet());
+app.use(express.json({ limit: '1mb' }));
+app.use(morgan('dev'));
+
+const limiter = rateLimit({
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000),
+  max: Number(process.env.RATE_LIMIT_MAX || 120),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(limiter);
+
+// ---- Health
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    env: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+    hasMongoUri: !!process.env.MONGO_URI,
+    payments: process.env.PAYMENTS_PROVIDER || 'none',
+    hasStripeKey: !!process.env.STRIPE_SECRET_KEY,
+    port: PORT,
+  });
 });
 
-// Parsers
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Mongo
-(async () => {
-  try {
-    if (!MONGO_URI) throw new Error("Falta MONGODB_URI/MONGO_URI");
-    console.log("🔎 Conectando a Mongo:", MONGO_URI.replace(/:\/\/.*@/, "://***@"));
-    const conn = await mongoose.connect(MONGO_URI);
-    dbReady = 1;
-    console.log(`✅ MongoDB conectado: ${conn.connection.name}`);
-  } catch (err) {
-    dbReady = 0;
-    console.error("❌ Error MongoDB:", err.message);
+// ---- Admin
+app.get('/api/admin/ping', (req, res) => {
+  const headerKey = req.get('x-admin-key');
+  if (headerKey !== ADMIN_API_KEY) {
+    return res.status(401).json({ ok: false, error: 'unauthorized' });
   }
+  res.json({ ok: true, pong: true });
+});
+
+// ---- Mongo (no bloquear arranque si falla)
+(async () => {
+  const uri = process.env.MONGO_URI;
+  if (!uri) {
+    console.warn('⚠️  MONGO_URI no definido; sigo sin DB.');
+  } else {
+    try {
+      await mongoose.connect(uri, { dbName: process.env.MONGO_DB || 'iguideu10' });
+      console.log('✅ MongoDB conectado');
+    } catch (err) {
+      console.error('❌ Error MongoDB:', err?.message || err);
+      console.warn('⚠️  Continuo sin DB para no bloquear el server.');
+    }
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Express ON http://127.0.0.1:${PORT} PID=${process.pid}`);
+  });
 })();
 
-// Health
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    env: process.env.NODE_ENV,
-    dbState: dbReady,
-    hasMongoUri: !!MONGO_URI,
-    payments: "stripe",
-    hasStripeKey: !!stripeKey,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Payments
-app.post("/api/payments/create-intent", async (req, res) => {
-  try {
-    if (!stripe) return res.json({ ok: false, error: "stripe_key_missing" });
-    const { amount, currency } = req.body || {};
-    if (!amount || !currency) {
-      return res.status(400).json({ ok: false, error: "amount/currency invalid" });
-    }
-    const pi = await stripe.paymentIntents.create({ amount, currency });
-    res.json({ ok: true, paymentIntentId: pi.id, clientSecret: pi.client_secret });
-  } catch (err) {
-    console.error("❌ Error create-intent:", err.message);
-    res.status(400).json({ ok: false, error: err.message });
-  }
-});
-
-// Debug de rutas
-app.get("/__debug/routes", (req, res) => {
-  const routes = [];
-  app._router.stack.forEach((m) => {
-    if (m.route && m.route.path) {
-      const methods = Object.keys(m.route.methods).join(",").toUpperCase();
-      routes.push(`${methods} ${m.route.path}`);
-    }
-  });
-  res.json({ routes });
-});
-
-// Arranque
-app.listen(PORT, () => {
-  console.log(`✅ Express ON (PORT=${PORT})`);
-});
-
-// Evitar que un unhandledRejection termine el proceso en Render
-process.on("unhandledRejection", (err) => {
-  console.error("UnhandledRejection:", err?.message || err);
+// ---- Error handler
+app.use((err, _req, res, _next) => {
+  console.error('Unhandled error:', err?.message || err);
+  res.status(500).json({ ok: false, error: 'internal_error' });
 });

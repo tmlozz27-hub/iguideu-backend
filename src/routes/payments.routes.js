@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { createPaymentIntent, paymentsDiag, refundPayment } from "../controllers/payments.controller.js";
+import { createPaymentIntent, diagStripe } from "../controllers/payments.controller.js";
 
-const r = Router();
+const router = Router();
 
-r.get("/diag", paymentsDiag);
-r.post("/intent", createPaymentIntent);
-r.post("/refund", refundPayment);
+router.get("/diag", diagStripe);
+router.post("/create-intent", createPaymentIntent);
 
-export default r;
+export default router;
+
