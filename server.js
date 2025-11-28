@@ -6,12 +6,18 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
-import bodyParser from "body-parser";
 import Stripe from "stripe";
 
 dotenv.config();
 
 const app = express();
+
+// ============================
+//  STRIPE
+// ============================
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 // ============================
 //  CONFIG & SECURITY
@@ -30,15 +36,13 @@ app.use(
   })
 );
 
-app.use(express.json());
-app.use(bodyParser.json());
-
-// ============================
-//  STRIPE
-// ============================
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+// ⚠️ OJO: NO aplicar express.json() al webhook
+app.use((req, res, next) => {
+  if (req.originalUrl === "/api/stripe/webhook") {
+    return next();
+  }
+  express.json()(req, res, next);
+});
 
 // ============================
 //  MONGO
@@ -173,11 +177,10 @@ async function createCheckoutSession(req, res) {
 //  STRIPE CHECKOUT SESSION
 // ============================
 
-// Ruta "nueva": requiere email + amount
+// Ruta “nueva”: requiere email + amount
 app.post("/api/checkout", createCheckoutSession);
 
-// Ruta del FRONTEND SIMPLE: NO ROMPE SI NO MANDA BODY
-// Usa por defecto: email fijo + 10 USD
+// Ruta del FRONTEND SIMPLE: sin body → defaults
 app.post("/api/payments/create-checkout", (req, res) => {
   if (!req.body || typeof req.body !== "object") {
     req.body = {};
@@ -211,7 +214,7 @@ app.post(
         STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      console.error("❌ Error webhook:", err);
+      console.error("❌ Error webhook:", err.message);
       return res.status(400).send(`Webhook error: ${err.message}`);
     }
 
