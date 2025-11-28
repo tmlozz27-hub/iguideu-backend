@@ -118,19 +118,6 @@ async function createCheckoutSession(req, res) {
   try {
     let { email, amount } = req.body || {};
 
-    // 💡 Compatibilidad con frontend viejo:
-    // si viene sin body y la ruta es /api/payments/create-checkout,
-    // usamos valores por defecto para que NO rompa.
-    if ((!email || !amount) && req.originalUrl.includes("/api/payments/create-checkout")) {
-      email = email || "test+frontend@iguideu.com";
-      amount = amount || 10;
-      console.log("⚠️ /api/payments/create-checkout sin body, usando valores por defecto", {
-        email,
-        amount,
-      });
-    }
-
-    // Para /api/checkout "nuevo", seguimos exigiendo datos
     if (!email || !amount) {
       return res
         .status(400)
@@ -184,14 +171,28 @@ async function createCheckoutSession(req, res) {
 
 // ============================
 //  STRIPE CHECKOUT SESSION
-//  (DOS RUTAS PARA EL MISMO HANDLER)
 // ============================
 
-// Nueva ruta limpia (si algún día la usás directo)
+// Ruta "nueva": requiere email + amount
 app.post("/api/checkout", createCheckoutSession);
 
-// Ruta vieja usada por el frontend simple (NO LA ROMPEMOS)
-app.post("/api/payments/create-checkout", createCheckoutSession);
+// Ruta del FRONTEND SIMPLE: NO ROMPE SI NO MANDA BODY
+// Usa por defecto: email fijo + 10 USD
+app.post("/api/payments/create-checkout", (req, res) => {
+  if (!req.body || typeof req.body !== "object") {
+    req.body = {};
+  }
+
+  if (!req.body.email) {
+    req.body.email = "test+frontend@iguideu.com";
+  }
+  if (!req.body.amount) {
+    req.body.amount = 10;
+  }
+
+  console.log("⚠️ /api/payments/create-checkout usando defaults", req.body);
+  return createCheckoutSession(req, res);
+});
 
 // ============================
 //  STRIPE WEBHOOK
