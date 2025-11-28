@@ -1,5 +1,5 @@
 // ===============================================
-// I GUIDE U – Backend 24  (server.js completo)
+// I GUIDE U – Backend 24 (server.js completo)
 // ===============================================
 
 import express from "express";
@@ -42,7 +42,7 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 //  MONGO
 // ============================
 
-mongoose.connect(process.env.MONGO_URI, { })
+mongoose.connect(process.env.MONGO_URI, {})
   .then(() => console.log("✅ MongoDB conectado"))
   .catch(err => {
     console.error("❌ Error MongoDB:", err);
@@ -64,14 +64,17 @@ const GuideSchema = new mongoose.Schema({
 });
 
 const BookingSchema = new mongoose.Schema({
-  email: String,
+  guideId: String,
   guideName: String,
-  amount: Number,
+  travelerEmail: String,
+  date: String,
+  hours: Number,
+  amountUsd: Number,
   currency: String,
-  paymentIntent: String,
+  stripeSessionId: String,
+  stripePaymentIntentId: String,
   status: String,
-  createdAt: { type: Date, default: Date.now }
-});
+}, { timestamps: true });
 
 const Guide = mongoose.model("Guide", GuideSchema);
 const Booking = mongoose.model("Booking", BookingSchema);
@@ -109,6 +112,29 @@ app.post("/api/checkout", async (req, res) => {
   try {
     const { email, amount } = req.body;
 
+    if (!email || !amount) {
+      return res.status(400).json({ ok: false, error: "Missing email or amount" });
+    }
+
+    const successUrl =
+      process.env.STRIPE_SUCCESS_URL ||
+      (process.env.PUBLIC_BASE_URL
+        ? `${process.env.PUBLIC_BASE_URL}/success`
+        : null);
+
+    const cancelUrl =
+      process.env.STRIPE_CANCEL_URL ||
+      (process.env.PUBLIC_BASE_URL
+        ? `${process.env.PUBLIC_BASE_URL}/cancel`
+        : null);
+
+    if (!successUrl || !cancelUrl) {
+      console.error("❌ ERROR CHECKOUT: Missing success/cancel URLs");
+      return res
+        .status(500)
+        .json({ ok: false, error: "Server misconfigured: missing success/cancel URLs" });
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
@@ -123,12 +149,11 @@ app.post("/api/checkout", async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.PUBLIC_BASE_URL}/success`,
-      cancel_url: `${process.env.PUBLIC_BASE_URL}/cancel`,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
     });
 
     res.json({ ok: true, url: session.url });
-
   } catch (err) {
     console.error("❌ ERROR CHECKOUT:", err);
     res.status(500).json({ ok: false, error: err.message });
@@ -160,13 +185,19 @@ app.post(
       const data = event.data.object;
 
       await Booking.create({
-        email: data.customer_email,
-        amount: data.amount_total / 100,
-        currency: data.currency,
-        paymentIntent: data.payment_intent,
+        travelerEmail: data.customer_email,
+        amountUsd: data.amount_total / 100,
+        currency: data.currency.toUpperCase(),
+        stripeSessionId: data.id,
+        stripePaymentIntentId: data.payment_intent,
         guideName: "pending",
+        guideId: "pending",
         status: "paid",
+        date: "pending",
+        hours: 0,
       });
+
+      console.log("✅ Booking creada desde webhook");
     }
 
     res.json({ received: true });
@@ -174,7 +205,7 @@ app.post(
 );
 
 // ===============================================
-//  ADMIN AUTH (FUNCIONA CON LAS DOS VARIABLES)
+//  ADMIN AUTH (ACEPTA 2 VARIABLES)
 // ===============================================
 
 const ADMIN_KEY =
@@ -191,12 +222,15 @@ function adminAuth(req, res, next) {
 }
 
 // ===============================================
-//  ADMIN: BOOKINGS POR EMAIL
+//  ADMIN: BOOKINGS
 // ===============================================
 
 app.get("/api/admin/bookings", adminAuth, async (req, res) => {
-  const email = req.query.email;
-  const bookings = await Booking.find(email ? { email } : {});
+  const email = req.query.email
+    ? { travelerEmail: req.query.email }
+    : {};
+
+  const bookings = await Booking.find(email);
   res.json(bookings);
 });
 
