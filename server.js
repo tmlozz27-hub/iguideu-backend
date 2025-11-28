@@ -20,13 +20,15 @@ const app = express();
 const CORS_ORIGINS = [
   "http://127.0.0.1:5181",
   "http://localhost:5181",
-  "http://192.168.0.4:5181"
+  "http://192.168.0.4:5181",
 ];
 
-app.use(cors({
-  origin: CORS_ORIGINS,
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: CORS_ORIGINS,
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 app.use(bodyParser.json());
@@ -42,9 +44,10 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 //  MONGO
 // ============================
 
-mongoose.connect(process.env.MONGO_URI, {})
+mongoose
+  .connect(process.env.MONGO_URI, {})
   .then(() => console.log("✅ MongoDB conectado"))
-  .catch(err => {
+  .catch((err) => {
     console.error("❌ Error MongoDB:", err);
     process.exit(1);
   });
@@ -63,18 +66,21 @@ const GuideSchema = new mongoose.Schema({
   description: String,
 });
 
-const BookingSchema = new mongoose.Schema({
-  guideId: String,
-  guideName: String,
-  travelerEmail: String,
-  date: String,
-  hours: Number,
-  amountUsd: Number,
-  currency: String,
-  stripeSessionId: String,
-  stripePaymentIntentId: String,
-  status: String,
-}, { timestamps: true });
+const BookingSchema = new mongoose.Schema(
+  {
+    guideId: String,
+    guideName: String,
+    travelerEmail: String,
+    date: String,
+    hours: Number,
+    amountUsd: Number,
+    currency: String,
+    stripeSessionId: String,
+    stripePaymentIntentId: String,
+    status: String,
+  },
+  { timestamps: true }
+);
 
 const Guide = mongoose.model("Guide", GuideSchema);
 const Booking = mongoose.model("Booking", BookingSchema);
@@ -91,7 +97,7 @@ app.get("/api/health", async (req, res) => {
     publicBaseUrl: process.env.PUBLIC_BASE_URL || null,
     cors: CORS_ORIGINS,
     db: mongoose.connection.readyState === 1,
-    stripeKeyLoaded: !!process.env.STRIPE_SECRET_KEY
+    stripeKeyLoaded: !!process.env.STRIPE_SECRET_KEY,
   });
 });
 
@@ -110,10 +116,25 @@ app.get("/api/guides", async (req, res) => {
 
 async function createCheckoutSession(req, res) {
   try {
-    const { email, amount } = req.body;
+    let { email, amount } = req.body || {};
 
+    // 💡 Compatibilidad con frontend viejo:
+    // si viene sin body y la ruta es /api/payments/create-checkout,
+    // usamos valores por defecto para que NO rompa.
+    if ((!email || !amount) && req.originalUrl.includes("/api/payments/create-checkout")) {
+      email = email || "test+frontend@iguideu.com";
+      amount = amount || 10;
+      console.log("⚠️ /api/payments/create-checkout sin body, usando valores por defecto", {
+        email,
+        amount,
+      });
+    }
+
+    // Para /api/checkout "nuevo", seguimos exigiendo datos
     if (!email || !amount) {
-      return res.status(400).json({ ok: false, error: "Missing email or amount" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "Missing email or amount" });
     }
 
     const successUrl =
@@ -130,9 +151,10 @@ async function createCheckoutSession(req, res) {
 
     if (!successUrl || !cancelUrl) {
       console.error("❌ ERROR CHECKOUT: Missing success/cancel URLs");
-      return res
-        .status(500)
-        .json({ ok: false, error: "Server misconfigured: missing success/cancel URLs" });
+      return res.status(500).json({
+        ok: false,
+        error: "Server misconfigured: missing success/cancel URLs",
+      });
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -165,9 +187,10 @@ async function createCheckoutSession(req, res) {
 //  (DOS RUTAS PARA EL MISMO HANDLER)
 // ============================
 
+// Nueva ruta limpia (si algún día la usás directo)
 app.post("/api/checkout", createCheckoutSession);
 
-// Alias para el frontend simple viejo:
+// Ruta vieja usada por el frontend simple (NO LA ROMPEMOS)
 app.post("/api/payments/create-checkout", createCheckoutSession);
 
 // ============================
@@ -219,9 +242,7 @@ app.post(
 // ===============================================
 
 const ADMIN_KEY =
-  process.env.ADMIN_KEY ||
-  process.env.ADMIN_API_KEY ||
-  "___NO_ADMIN_KEY___";
+  process.env.ADMIN_KEY || process.env.ADMIN_API_KEY || "___NO_ADMIN_KEY___";
 
 function adminAuth(req, res, next) {
   const key = req.header("x-admin-key");
