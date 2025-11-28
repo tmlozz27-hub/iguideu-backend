@@ -105,10 +105,10 @@ app.get("/api/guides", async (req, res) => {
 });
 
 // ============================
-//  STRIPE CHECKOUT SESSION
+//  FUNCION COMÚN: CHECKOUT STRIPE
 // ============================
 
-app.post("/api/checkout", async (req, res) => {
+async function createCheckoutSession(req, res) {
   try {
     const { email, amount } = req.body;
 
@@ -158,7 +158,17 @@ app.post("/api/checkout", async (req, res) => {
     console.error("❌ ERROR CHECKOUT:", err);
     res.status(500).json({ ok: false, error: err.message });
   }
-});
+}
+
+// ============================
+//  STRIPE CHECKOUT SESSION
+//  (DOS RUTAS PARA EL MISMO HANDLER)
+// ============================
+
+app.post("/api/checkout", createCheckoutSession);
+
+// Alias para el frontend simple viejo:
+app.post("/api/payments/create-checkout", createCheckoutSession);
 
 // ============================
 //  STRIPE WEBHOOK
@@ -226,11 +236,11 @@ function adminAuth(req, res, next) {
 // ===============================================
 
 app.get("/api/admin/bookings", adminAuth, async (req, res) => {
-  const email = req.query.email
+  const emailFilter = req.query.email
     ? { travelerEmail: req.query.email }
     : {};
 
-  const bookings = await Booking.find(email);
+  const bookings = await Booking.find(emailFilter);
   res.json(bookings);
 });
 
