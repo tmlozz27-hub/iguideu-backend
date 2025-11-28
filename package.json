@@ -1,23 +1,21 @@
 {
-  "name": "backend-iguideu-24",
+  "name": "iguideu-backend",
   "version": "1.0.0",
   "description": "Backend de I GUIDE U (Node.js + Express + MongoDB + Stripe)",
   "main": "server.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "npx nodemon server.js"
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.2",
+    "dotenv": "^16.0.3",
+    "express": "^4.19.2",
     "helmet": "^7.0.0",
-    "mongoose": "^8.8.0",
-    "morgan": "^1.10.0",
-    "stripe": "^16.0.0"
+    "mongoose": "^7.6.1",
+    "stripe": "^14.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "nodemon": "^3.0.3"
   }
 }
