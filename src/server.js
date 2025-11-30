@@ -10,7 +10,7 @@ dotenv.config();
 
 const app = express();
 
-// por si algún proxy (Render), pero acá ya no usamos rate-limit
+// Render / proxy
 app.set('trust proxy', 1);
 
 const ENV = process.env.NODE_ENV || 'development';
@@ -26,19 +26,24 @@ let dbOk = false;
 let stripeKeyLoaded = Boolean(STRIPE_SECRET_KEY);
 
 // ============================
-// MIDDLEWARES SÚPER SIMPLES
+// MIDDLEWARES
 // ============================
 
 // CORS totalmente abierto
 app.use(
   cors({
-    origin: true, // refleja el Origin que llegue (incluye null, localhost, etc.)
+    origin: true, // refleja cualquier origin (localhost, file://, etc.)
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );
 
-// body parsers
+// ⚠️ Responder SIEMPRE 200 a cualquier OPTIONS (preflight)
+app.options('*', (req, res) => {
+  res.sendStatus(200);
+});
+
+// Body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -152,3 +157,4 @@ async function start() {
 }
 
 start();
+
