@@ -1,4 +1,4 @@
-// server.js – Backend I GUIDE U 24 (ESM)
+// server.js – Backend I GUIDE U 24 COMPLETO
 
 import express from "express";
 import cors from "cors";
@@ -9,24 +9,26 @@ import mongoose from "mongoose";
 
 import guidesRouter from "./src/routes/guides.js";
 import paymentsRouter from "./src/routes/payments.js";
+import bookingsRouter from "./src/routes/bookings.js";
 
 const app = express();
 
-// === Config básica ===
+// === ENVIRONMENT ===
 const ENV = process.env.NODE_ENV || "development";
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4026;
 
-// URL pública del backend
+// URL pública del backend (Render)
 const PUBLIC_BASE_URL =
   process.env.PUBLIC_BASE_URL ||
   (ENV === "production"
     ? "https://iguideu-backend-1.onrender.com"
     : `http://127.0.0.1:${PORT}`);
 
+// CORS
 const defaultCorsOrigins = [
   "http://127.0.0.1:5181",
   "http://localhost:5181",
-  "http://192.168.0.4:5181"
+  "http://192.168.0.4:5181",
 ];
 
 const CORS_ORIGINS = (() => {
@@ -44,8 +46,9 @@ const stripeKeyLoaded = Boolean(stripeSecretKey);
 
 let dbOk = false;
 
-// === Middlewares globales ===
+// === MIDDLEWARES ===
 app.use(helmet());
+
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -53,51 +56,50 @@ app.use(
       if (CORS_ORIGINS.includes(origin)) return cb(null, true);
       return cb(null, false);
     },
-    credentials: true
+    credentials: true,
   })
 );
 
 app.use(express.json());
 app.use(morgan(ENV === "production" ? "combined" : "dev"));
 
-// Rate limit
 app.use(
   "/api",
   rateLimit({
     windowMs: 60_000,
     max: 120,
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
   })
 );
 
-// === Health ===
+// === RUTA HEALTH ===
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     env: ENV,
     port: String(PORT),
     publicBaseUrl: PUBLIC_BASE_URL,
-    cors: CORS_ORIGINS,
     db: dbOk,
-    stripeKeyLoaded
+    stripeKeyLoaded,
   });
 });
 
-// === Rutas ===
+// === RUTAS PRINCIPALES ===
 app.use("/api/guides", guidesRouter);
 app.use("/api/payments", paymentsRouter);
+app.use("/api/bookings", bookingsRouter);
 
-// Not found /api
+// === NOT FOUND ===
 app.use("/api", (req, res) =>
   res.status(404).json({
     ok: false,
     error: "Not found",
-    path: req.originalUrl
+    path: req.originalUrl,
   })
 );
 
-// Error handler
+// === GLOBAL ERROR HANDLER ===
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error("❌ Error no manejado:", err);
@@ -105,7 +107,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ ok: false, error: "Internal server error" });
 });
 
-// === Start ===
+// === START SERVER ===
 async function start() {
   try {
     if (!MONGODB_URI) {
@@ -122,7 +124,7 @@ async function start() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Backend 24 en http://0.0.0.0:${PORT}`);
+    console.log(`🚀 Backend iguideu24 corriendo en http://0.0.0.0:${PORT}`);
     console.log(`🌍 PublicBaseUrl: ${PUBLIC_BASE_URL}`);
     console.log(`🔐 Stripe key loaded: ${stripeKeyLoaded}`);
   });
