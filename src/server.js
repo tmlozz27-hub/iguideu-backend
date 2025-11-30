@@ -29,7 +29,7 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 
-// estos flags los usamos en /api/health
+// flags para /api/health
 let dbOk = false;
 let stripeKeyLoaded = Boolean(STRIPE_SECRET_KEY);
 
@@ -38,33 +38,16 @@ let stripeKeyLoaded = Boolean(STRIPE_SECRET_KEY);
 // ============================
 app.use(morgan('combined'));
 
-// CORS: permitir el frontend simple local y futuros frontends públicos
-const allowedOrigins = [
-  'http://127.0.0.1:5181',
-  'http://localhost:5181',
-  // cuando tengas frontend en producción, lo agregamos acá:
-  // 'https://tufrontend.iguideu.com',
-];
-
+// 🌎 CORS ABIERTO (para que cualquier frontend, incluido el simple, funcione)
 app.use(
   cors({
-    origin(origin, callback) {
-      // permitir herramientas internas (sin origin → curl, Postman, health checks)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      // origen no permitido: respondemos sin CORS pero sin romper el server
-      return callback(null, false);
-    },
+    origin: true, // refleja cualquier origin que llegue
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );
 
-// Rate limit general para /api (evita abusos básicos)
+// Rate limit general para /api
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 min
   max: 200, // 200 requests por IP/ventana
@@ -80,14 +63,12 @@ const apiLimiter = rateLimit({
 
 app.use('/api', apiLimiter);
 
-// ⚠️ IMPORTANTE: Stripe webhook con raw body ANTES de express.json()
+// ⚠️ Stripe webhook: raw body ANTES de express.json()
 app.post(
   '/api/stripe/webhook',
   express.raw({ type: 'application/json' }),
   async (req, res) => {
-    // Si todavía no configuraste webhook en Stripe, lo dejamos como stub seguro:
     console.log('🔔 Webhook Stripe recibido (stub).');
-    // Podés implementar la lógica real más adelante.
     return res.sendStatus(200);
   },
 );
@@ -107,7 +88,6 @@ app.get('/api/health', (req, res) => {
     env: ENV,
     port: String(PORT),
     publicBaseUrl: PUBLIC_BASE_URL,
-    cors: allowedOrigins,
     db: dbOk,
     stripeKeyLoaded,
   });
@@ -169,7 +149,7 @@ app.post('/api/payments/create-checkout', async (req, res) => {
   }
 });
 
-// 404 genérico para otras rutas
+// 404 genérico
 app.use((req, res) => {
   return res.status(404).json({
     ok: false,
@@ -192,7 +172,7 @@ async function start() {
       } catch (err) {
         console.error('❌ Error MongoDB:', err);
         dbOk = false;
-        // NO tiramos el error para que el server igual arranque sin DB
+        // el server igual arranca, pero health va a decir db:false
       }
     }
 
