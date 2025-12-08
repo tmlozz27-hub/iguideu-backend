@@ -1,6 +1,6 @@
 // ===========================
 // I GUIDE U – Backend 24
-// SERVER.JS COMPLETO
+// SERVER.JS COMPLETO FINAL
 // ===========================
 
 import express from "express";
@@ -32,13 +32,14 @@ app.options("*", cors());
 app.use(express.json());
 
 // ===========================
-// MONGO URI: FALLBACK HARD-CODED
+// MONGO URI – FALLBACK CORRECTO (FUNCIONA EN ATLAS)
 // ===========================
 
-// ⚠️ CAMBIÁ ESTA URI POR TU URI REAL:
+// ⚠️ USAR ESTA URI EXACTA (LA BUENA DEL backend-20)
 const FALLBACK_URI =
-  "mongodb+srv://iguideu23_user:Lorenza41@iguideu-db.sfgtfz8.mongodb.net/iguideu20?retryWrites=true&w=majority&appName=iguideu-db";
+  "mongodb+srv://iguideu20_user:Tomlore414@iguideu-db.sfgtfz8.mongodb.net/iguideu20?retryWrites=true&w=majority&appName=iguideu-db";
 
+// Si Render no pasa MONGO_URI, usamos la buena
 const MONGO_URI = process.env.MONGO_URI || FALLBACK_URI;
 
 console.log("DEBUG MONGO_URI:", MONGO_URI);
@@ -57,8 +58,8 @@ mongoose
 // MODELOS
 // ===========================
 
-import Guide from "./src/models/Guide.js";
-import Booking from "./src/models/Booking.js";
+import Guide from "./models/Guide.js";
+import Booking from "./models/Booking.js";
 
 // ===========================
 // RUTAS
@@ -76,9 +77,7 @@ app.get("/api/health", async (req, res) => {
   });
 });
 
-// ---------------------------
-// GET GUÍAS
-// ---------------------------
+// Listar guías
 app.get("/api/guides", async (req, res) => {
   try {
     const guides = await Guide.find();
@@ -89,9 +88,7 @@ app.get("/api/guides", async (req, res) => {
   }
 });
 
-// ---------------------------
-// GET BOOKINGS
-// ---------------------------
+// Listar reservas
 app.get("/api/bookings", async (req, res) => {
   try {
     const bookings = await Booking.find();
@@ -111,4 +108,3 @@ const PORT = process.env.PORT || 4026;
 app.listen(PORT, () => {
   console.log(`🚀 Backend 24 corriendo en http://0.0.0.0:${PORT}`);
 });
-
