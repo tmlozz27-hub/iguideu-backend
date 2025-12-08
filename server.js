@@ -1,136 +1,185 @@
-// server.js – Backend I GUIDE U 24 COMPLETO
+// ================================================================
+//  I GUIDE U – BACKEND 24  (Render + Frontend Simple)
+//  SERVER.JS COMPLETO PARA PEGAR ENTERO
+// ================================================================
 
 import express from "express";
 import cors from "cors";
-import helmet from "helmet";
-import morgan from "morgan";
-import rateLimit from "express-rate-limit";
 import mongoose from "mongoose";
+import dotenv from "dotenv";
+import Stripe from "stripe";
 
-import guidesRouter from "./src/routes/guides.js";
-import paymentsRouter from "./src/routes/payments.js";
-import bookingsRouter from "./src/routes/bookings.js";
+// ---------------------------------------------------------------
+// ENV
+// ---------------------------------------------------------------
+dotenv.config();
 
-const app = express();
-
-// === ENVIRONMENT ===
-const ENV = process.env.NODE_ENV || "development";
-const PORT = process.env.PORT ? Number(process.env.PORT) : 4026;
-
-// URL pública del backend (Render)
+const PORT = process.env.PORT || 4026;
 const PUBLIC_BASE_URL =
-  process.env.PUBLIC_BASE_URL ||
-  (ENV === "production"
-    ? "https://iguideu-backend-1.onrender.com"
-    : `http://127.0.0.1:${PORT}`);
+  process.env.PUBLIC_BASE_URL || "https://iguideu-backend-1.onrender.com";
 
-// CORS
-const defaultCorsOrigins = [
-  "http://127.0.0.1:5181",
+const MONGO_URI = process.env.MONGO_URI;
+const stripeSecret = process.env.STRIPE_SECRET_KEY || "";
+const stripe = stripeSecret ? new Stripe(stripeSecret) : null;
+
+// ---------------------------------------------------------------
+// CORS CONFIG (Frontend local + dominio producción + Cloudflare)
+// ---------------------------------------------------------------
+const allowedOrigins = [
   "http://localhost:5181",
+  "http://127.0.0.1:5181",
   "http://192.168.0.4:5181",
+  "https://iguideu-backend-1.onrender.com",
+  "https://api.i-guide-u.com",
+  "https://www.api.i-guide-u.com",
 ];
 
-const CORS_ORIGINS = (() => {
-  if (!process.env.CORS_ORIGINS) return defaultCorsOrigins;
-  return process.env.CORS_ORIGINS.split(",").map((o) => o.trim());
-})();
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true); // permite Postman / PowerShell
+    if (allowedOrigins.includes(origin)) return callback(null, true);
 
-// MongoDB
-const MONGODB_URI = process.env.MONGODB_URI || "";
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || undefined;
+    console.log("[CORS BLOCKED] Origin no permitido:", origin);
+    return callback(new Error("CORS: Origin not allowed"));
+  },
+};
 
-// Stripe
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "";
-const stripeKeyLoaded = Boolean(stripeSecretKey);
-
-let dbOk = false;
-
-// === MIDDLEWARES ===
-app.use(helmet());
-
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      if (CORS_ORIGINS.includes(origin)) return cb(null, true);
-      return cb(null, false);
-    },
-    credentials: true,
-  })
-);
-
+const app = express();
+app.use(cors(corsOptions));
 app.use(express.json());
-app.use(morgan(ENV === "production" ? "combined" : "dev"));
 
-app.use(
-  "/api",
-  rateLimit({
-    windowMs: 60_000,
-    max: 120,
-    standardHeaders: true,
-    legacyHeaders: false,
-  })
-);
+// ---------------------------------------------------------------
+// MONGO
+// ---------------------------------------------------------------
+console.log("DEBUG MONGO_URI:", MONGO_URI);
 
-// === RUTA HEALTH ===
-app.get("/api/health", (req, res) => {
-  res.json({
-    ok: true,
-    env: ENV,
-    port: String(PORT),
-    publicBaseUrl: PUBLIC_BASE_URL,
-    db: dbOk,
-    stripeKeyLoaded,
-  });
+mongoose
+  .connect(MONGO_URI)
+  .then(() => console.log("✅ MongoDB conectado"))
+  .catch((err) => console.error("❌ Error MongoDB:", err));
+
+// ---------------------------------------------------------------
+// MODELOS
+// ---------------------------------------------------------------
+const guideSchema = new mongoose.Schema({
+  name: String,
+  city: String,
+  country: String,
+  hourlyRate: Number,
+  dailyRate: Number,
+  rating: Number,
+  languages: [String],
+  description: String,
 });
 
-// === RUTAS PRINCIPALES ===
-app.use("/api/guides", guidesRouter);
-app.use("/api/payments", paymentsRouter);
-app.use("/api/bookings", bookingsRouter);
-
-// === NOT FOUND ===
-app.use("/api", (req, res) =>
-  res.status(404).json({
-    ok: false,
-    error: "Not found",
-    path: req.originalUrl,
-  })
+const bookingSchema = new mongoose.Schema(
+  {
+    guideName: String,
+    city: String,
+    country: String,
+    duration: String,
+    total: Number,
+    email: String,
+    paymentStatus: String, // pending | PAID | cancelled
+    meta: { type: Object, default: {} },
+    stripeCheckoutSessionId: String,
+  },
+  { timestamps: true }
 );
 
-// === GLOBAL ERROR HANDLER ===
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  console.error("❌ Error no manejado:", err);
-  if (res.headersSent) return;
-  res.status(500).json({ ok: false, error: "Internal server error" });
-});
+const Guide =
+  mongoose.models.Guide || mongoose.model("Guide", guideSchema);
+const Booking =
+  mongoose.models.Booking || mongoose.model("Booking", bookingSchema);
 
-// === START SERVER ===
-async function start() {
+// ---------------------------------------------------------------
+// RUTAS
+// ---------------------------------------------------------------
+
+// HEALTH CHECK
+app.get("/api/health", async (req, res) => {
   try {
-    if (!MONGODB_URI) {
-      dbOk = false;
-      console.warn("⚠️ No hay MONGODB_URI");
-    } else {
-      await mongoose.connect(MONGODB_URI, { dbName: MONGODB_DB_NAME });
-      dbOk = true;
-      console.log("✅ MongoDB OK");
-    }
+    return res.json({
+      ok: true,
+      env: process.env.NODE_ENV || "unknown",
+      port: String(PORT),
+      publicBaseUrl: PUBLIC_BASE_URL,
+      db: !!mongoose.connection.readyState,
+      stripeKeyLoaded: !!stripeSecret,
+    });
   } catch (err) {
-    dbOk = false;
-    console.error("❌ Error MongoDB:", err);
+    console.error("ERROR /api/health:", err);
+    res.status(500).json({ ok: false });
   }
+});
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Backend iguideu24 corriendo en http://0.0.0.0:${PORT}`);
-    console.log(`🌍 PublicBaseUrl: ${PUBLIC_BASE_URL}`);
-    console.log(`🔐 Stripe key loaded: ${stripeKeyLoaded}`);
-  });
-}
+// LISTAR GUÍAS
+app.get("/api/guides", async (req, res) => {
+  try {
+    const guides = await Guide.find().lean();
+    return res.json({ ok: true, guides });
+  } catch (err) {
+    console.error("ERROR /api/guides:", err);
+    res.status(500).json({ ok: false, error: "Error leyendo guías" });
+  }
+});
 
-start().catch((err) => {
-  console.error("❌ Error al iniciar:", err);
-  process.exit(1);
+// LISTAR RESERVAS (para frontend simple)
+app.get("/api/bookings", async (req, res) => {
+  try {
+    const bookings = await Booking.find().lean();
+    return res.json({ ok: true, bookings });
+  } catch (err) {
+    console.error("ERROR /api/bookings:", err);
+    res.status(500).json({ ok: false, error: "Error leyendo reservas" });
+  }
+});
+
+// TEST CHECKOUT STRIPE
+app.post("/api/payments/test-checkout", async (req, res) => {
+  try {
+    if (!stripe) {
+      console.warn("[WARN] STRIPE_SECRET_KEY no seteado. URL dummy.");
+      return res.json({
+        ok: true,
+        url: "https://checkout.stripe.com/pay/test_dummy_url",
+      });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      success_url:
+        process.env.SUCCESS_URL ||
+        "https://iguideu-backend-1.onrender.com/success-demo",
+      cancel_url:
+        process.env.CANCEL_URL ||
+        "https://iguideu-backend-1.onrender.com/cancel-demo",
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: { name: "Test pago Stripe (USD 10) – I GUIDE U" },
+            unit_amount: 1000,
+          },
+          quantity: 1,
+        },
+      ],
+    });
+
+    return res.json({
+      ok: true,
+      url: session.url,
+      sessionId: session.id,
+    });
+  } catch (err) {
+    console.error("ERROR /api/payments/test-checkout:", err);
+    res.status(500).json({ ok: false, error: "Error creando Checkout" });
+  }
+});
+
+// ---------------------------------------------------------------
+// SERVIDOR
+// ---------------------------------------------------------------
+app.listen(PORT, () => {
+  console.log(`🚀 Backend 24 corriendo en http://0.0.0.0:${PORT}`);
 });
