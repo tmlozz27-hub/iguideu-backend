@@ -1,0 +1,89 @@
+# I GUIDE U – Backend PRODUCCIÓN (estable y seguro)
+
+API_BASE_URL=https://iguideu-backend-1.onrender.com
+
+# ENDPOINTS PÚBLICOS PARA LA APP (Android + iOS)
+# ----------------------------------------------
+
+# 1) Health check (opcional, para debug interno)
+#    GET {API_BASE_URL}/api/health
+#    Respuesta ejemplo:
+#    {
+#      "ok": true,
+#      "env": "production",
+#      "port": "10000",
+#      "publicBaseUrl": "http://127.0.0.1:10000",
+#      "db": true,
+#      "stripeKeyLoaded": true
+#    }
+
+# 2) Listar guías
+#    GET {API_BASE_URL}/api/guides
+#    Devuelve lista de guías:
+#    [
+#      {
+#        "id": "g1001",
+#        "name": "Arun - Bangkok Local Guide",
+#        "city": "Bangkok",
+#        "country": "Tailandia",
+#        "hourlyRate": 18,
+#        "dailyRate": 110,
+#        "rating": 4.8,
+#        ...
+#      },
+#      ...
+#    ]
+
+# 3) Crear Checkout de pago (Stripe)
+#    POST {API_BASE_URL}/api/payments/create-checkout
+#    BODY (ejemplo):
+#    {
+#      "guideId": "g1001",
+#      "date": "2025-12-27",
+#      "hours": 6,
+#      "amountUsd": 110,
+#      "customerEmail": "tmlozz27@gmail.com"
+#    }
+#    RESPUESTA:
+#    {
+#      "ok": true,
+#      "checkoutUrl": "https://checkout.stripe.com/c/pay/XXXX..."
+#    }
+#    La app debe abrir ese "checkoutUrl" en un WebView / navegador seguro.
+
+# 4) Webhook de Stripe (SOLO SERVIDOR – NUNCA LLAMAR DESDE LA APP)
+#    POST {API_BASE_URL}/api/stripe/webhook
+#    - Lo llama Stripe directamente.
+#    - El backend valida la firma con STRIPE_WEBHOOK_SECRET.
+#    - Actualiza el estado de la reserva/pago en MongoDB.
+
+# REGLAS DE SEGURIDAD (FIRMES)
+# ----------------------------
+
+# 1) La app NUNCA debe tener:
+#    - STRIPE_SECRET_KEY
+#    - STRIPE_WEBHOOK_SECRET
+#    - MONGO_URI
+#    Esos secretos viven solo en el backend (Render, .env).
+
+# 2) Toda la lógica crítica está en el backend:
+#    - Cálculo final del monto.
+#    - Creación de Checkout Sessions.
+#    - Verificación de eventos de Stripe.
+#    - Guardar/actualizar reservas en MongoDB.
+
+# 3) CORS:
+#    - El backend limita orígenes web permitidos (localhost:5181, etc.).
+#    - Las apps nativas (Android/iOS) no pasan por CORS, van directo por HTTPS.
+
+# 4) Protección HTTP:
+#    - Usamos helmet para cabeceras seguras.
+#    - Usamos rate limiting en rutas sensibles (pagos).
+#    - No hay endpoints que expongan datos sensibles sin autorización.
+
+# 5) Flujo seguro de pago:
+#    - La app pide un checkout a /api/payments/create-checkout.
+#    - El backend crea la sesión en Stripe con STRIPE_SECRET_KEY.
+#    - El usuario paga en página segura de Stripe (Checkout Hosted).
+#    - Stripe notifica al backend por webhook (firma verificada).
+#    - El backend marca la reserva como pagada en MongoDB.

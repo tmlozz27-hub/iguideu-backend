@@ -1,0 +1,147 @@
+I GUIDE U – PLAN DE LANZAMIENTO MUNDIAL (BACKEND + MOBILE)
+=========================================================
+
+ESTADO ACTUAL (FUNCIONANDO)
+---------------------------
+[✔] Backend producción en Render: https://iguideu-backend-1.onrender.com
+[✔] MongoDB online y conectada (db = true en /api/health)
+[✔] Stripe integrado:
+     - /api/payments/create-checkout crea Checkout Session
+     - /api/stripe/webhook recibe eventos
+[✔] /api/guides devuelve 3 guías (Arun, Maya, Sofía)
+[✔] Frontend web simple funcionando contra ese backend
+[✔] Proyecto mobile React Native (Expo) creado: iguideu-mobile
+     - src/config/api.js apunta al backend de producción
+     - HomeScreen.js listo para usar /api/guides + /api/payments/create-checkout
+
+OBJETIVO
+--------
+Tener una plataforma lista para:
+  - App Android publicada (Google Play)
+  - App iOS publicada (App Store)
+  - Mismo backend seguro en Render
+  - Reservas y pagos registrados en Mongo, auditables
+
+PENDIENTES GRANDES (BACKEND – LÓGICA Y SEGURIDAD)
+--------------------------------------------------
+1) MODELO DE RESERVAS (BOOKINGS) EN MONGO
+   - Colección: bookings
+   - Campos sugeridos:
+     - _id (ObjectId)
+     - guideId (string, ej. "g1001")
+     - guideName (string)
+     - travelerEmail (string)
+     - travelerName (opcional)
+     - date (string YYYY-MM-DD)
+     - hours (number)
+     - amountUsd (number)
+     - currency (string, ej. "USD")
+     - stripeSessionId (string)
+     - stripePaymentIntentId (string opcional)
+     - status (string: "pending", "paid", "cancelled", "failed")
+     - createdAt (Date)
+     - updatedAt (Date)
+   - Índices recomendados:
+     - travelerEmail
+     - guideId
+     - status
+
+2) ENDPOINT PARA CREAR RESERVA PREVIA AL CHECKOUT
+   - Cuando la app mobile llama a /api/payments/create-checkout:
+     a) Se crea una RESERVA "pending" en Mongo con los datos básicos:
+        - guideId, date, hours, amountUsd, travelerEmail, status="pending"
+     b) Se crea la Checkout Session en Stripe.
+     c) Se guarda stripeSessionId en el documento de la reserva.
+     d) Se devuelve al cliente:
+        {
+          ok: true,
+          checkoutUrl,
+          bookingId
+        }
+
+   - Esto permite:
+     - Tener registro de intento de compra aunque Stripe falle después.
+     - Cruzar pagos con reservas por stripeSessionId.
+
+3) WEBHOOK Stripe → ACTUALIZAR RESERVA
+   - En /api/stripe/webhook:
+     - Verificar firma con STRIPE_WEBHOOK_SECRET.
+     - Para eventos relevantes:
+       * checkout.session.completed
+       * payment_intent.succeeded
+     - Buscar la reserva correspondiente por stripeSessionId o paymentIntentId.
+     - Actualizar:
+       - status = "paid"
+       - stripePaymentIntentId
+       - updatedAt = ahora
+     - Si no se encuentra reserva, loggear el evento en una colección "orphanStripeEvents" para análisis.
+
+4) ENDPOINT ADMIN SEGURO PARA LISTAR RESERVAS
+   - Ruta sugerida: GET /api/admin/bookings
+   - Seguridad simple pero firme:
+     - Header obligatorio: x-admin-key
+     - Valor: ADMIN_API_KEY definido en .env (solo el dueño lo sabe)
+     - Si falta o no coincide → 401 Unauthorized
+   - Filtros básicos:
+     - ?status=pending|paid|cancelled
+     - ?email=correo@viajero.com
+   - Este endpoint NO se usa desde la app pública, solo desde un panel interno o PowerShell.
+
+5) CORS Y SEGURIDAD ADICIONAL
+   - CORS:
+     - Mantener restringidos los orígenes web conocidos.
+     - Las apps nativas mobile no pasan por CORS (usan HTTPS directo).
+   - Rate limiting:
+     - Mantener limitador fuerte en /api/payments/create-checkout y /api/stripe/webhook.
+   - Headers:
+     - helmet ya activado (revisar que siga).
+   - Logs:
+     - Log mínimo de seguridad:
+       - Creación de reservas
+       - Cambios de status de reservas
+       - Errores en webhooks
+
+PENDIENTES (MOBILE – APP REACT NATIVE)
+--------------------------------------
+1) HomeScreen (ya planteada)
+   - Cargar guías desde /api/guides.
+   - Mostrar cards con info (nombre, ciudad, precio, rating).
+   - Botón "Reservar y pagar (Stripe test)" → llama al backend y abre checkoutUrl.
+
+2) COMPLETAR FLUJO DE RESERVA
+   - Después del pago:
+     - A corto plazo: confiar en el webhook + Stripe Dashboard.
+     - A mediano plazo: pantalla "Mis reservas" que:
+       - GET /api/admin/bookings?email= viajero (con protección adecuada a futuro).
+
+3) NAVEGACIÓN BÁSICA
+   - Uso de React Navigation:
+     - Stack:
+       - Home
+       - CheckoutInfo (opcional)
+       - Pantalla "Gracias, revisá tu mail y tu guía"
+
+4) MULTI-IDIOMA (solo UI)
+   - Textos en español/inglés desde un archivo de constantes (no crítico para el lanzamiento técnico).
+
+TAREAS CONCRETAS PARA CUANDO HAYA RED NORMAL (CASA)
+---------------------------------------------------
+1) Back-end (local: backend-iguideu-24):
+   - Agregar lógica de:
+     - creación de reservas antes del checkout
+     - actualización de reservas en el webhook
+     - endpoint GET /api/admin/bookings con x-admin-key
+   - Probar en local con Mongo Atlas + Stripe CLI.
+   - Subir cambios a GitHub (repo iguideu-backend).
+   - Render deploy automático.
+
+2) Mobile (iguideu-mobile):
+   - Probar Expo en wifi de casa:
+     - npx expo start
+     - Expo Go → abrir iguideu-mobile → verificar lista de guías.
+   - Probar crear checkout desde la app y pago test real.
+   - Preparar build:
+     - Android (APK/AAB) via EAS o Expo para subir a Google Play.
+     - iOS build para que Fede la suba con su cuenta Apple.
+
+3) VERIFICACIONES FINA

@@ -1,30 +1,26 @@
-// models/Booking.js
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const bookingSchema = new mongoose.Schema(
   {
-    userEmail: { type: String, required: true },
-    guideId: { type: mongoose.Schema.Types.ObjectId, ref: 'Guide', required: false },
-    guideName: { type: String, required: false },
-
-    amountTotal: { type: Number, required: true },
-    currency: { type: String, required: true },
-
-    platformFee: { type: Number, required: true },
-    guideNet: { type: Number, required: true },
-
-    stripeSessionId: { type: String, required: true, unique: true },
-    stripePaymentIntentId: { type: String },
-
-    status: {
+    guideName: { type: String, required: true },
+    city: { type: String },
+    country: { type: String },
+    duration: { type: String }, // Ej: "HOURS (3 hs)", "DAY (8 hs)"
+    total: { type: Number, required: true }, // Total en USD
+    email: { type: String },
+    extra: { type: String },
+    paymentStatus: {
       type: String,
-      enum: ['pending', 'paid', 'failed', 'refunded'],
-      default: 'paid',
-    }
+      enum: ["PENDING", "PAID", "CANCELLED"],
+      default: "PENDING",
+    },
+    stripeCheckoutSessionId: { type: String },
+    meta: { type: Object }, // durationType, hoursCount, etc.
   },
   { timestamps: true }
 );
 
-const Booking = mongoose.models.Booking || mongoose.model('Booking', bookingSchema);
+const Booking =
+  mongoose.models.Booking || mongoose.model("Booking", bookingSchema);
 
 export default Booking;
