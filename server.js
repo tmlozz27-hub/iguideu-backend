@@ -7,30 +7,54 @@ import cors from "cors";
 import mongoose from "mongoose";
 import Stripe from "stripe";
 import bodyParser from "body-parser";
-
-// =============================================
-// =============== ENVIRONMENT =================
-// =============================================
 import dotenv from "dotenv";
+
 dotenv.config();
 
 const app = express();
 
-// Stripe
+// =============================================
+// =============== STRIPE =======================
+// =============================================
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
-console.log(`🔑 STRIPE_SECRET_KEY preview: ${STRIPE_SECRET_KEY.slice(0, 10)}...(OK)`);
+console.log(
+  `🔑 STRIPE_SECRET_KEY preview: ${STRIPE_SECRET_KEY.slice(0, 10)}...(OK)`
+);
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 
-// MongoDB
+// =============================================
+// =============== MONGO ========================
+// =============================================
 const MONGO_URI = process.env.MONGO_URI;
 console.log(
-  "DEBUG MONGO_URI (hidden prefix):",
+  "DEBUG MONGO_URI prefix:",
   MONGO_URI ? MONGO_URI.slice(0, 35) + "..." : "NOT SET"
 );
 
-// ⚠️ Usamos SIEMPRE la DB "iguideu"
-const MONGODB_DB_NAME = "iguideu";
-console.log("DEBUG MONGODB_DB_NAME (HARDCODED):", MONGODB_DB_NAME);
+// usamos la misma DB que el seed
+const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "iguideu20";
+console.log("DEBUG DB_NAME:", MONGODB_DB_NAME);
+
+// =============================================
+// =============== MIDDLEWARE ===================
+// =============================================
+
+// Stripe Webhook RAW body
+app.use(
+  "/api/stripe/webhook",
+  bodyParser.raw({ type: "application/json" })
+);
+
+// JSON para el resto
+app.use(express.json());
+
+// CORS
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+  })
+);
 
 // =============================================
 // ================ MODELOS =====================
@@ -38,14 +62,16 @@ console.log("DEBUG MONGODB_DB_NAME (HARDCODED):", MONGODB_DB_NAME);
 
 const GuideSchema = new mongoose.Schema(
   {
-    id: String,          // ID lógico (opcional)
+    id: String,
     name: String,
     city: String,
     country: String,
     rating: Number,
-    priceHour: Number,   // usado por el backend
-    priceDay: Number     // usado por el backend
-    // si el doc tiene hourlyRate/dailyRate, los usamos de respaldo en calcularPrecio
+    priceHour: Number,
+    priceDay: Number,
+    // por compatibilidad, por si algún día usamos hourlyRate/dailyRate
+    hourlyRate: Number,
+    dailyRate: Number,
   },
   { timestamps: true }
 );
@@ -54,7 +80,7 @@ const Guide = mongoose.model("Guide", GuideSchema);
 
 const BookingSchema = new mongoose.Schema(
   {
-    guideId: String, // lo que nos mande el frontend (puede ser id lógico o _id)
+    guideId: String,
     guideName: String,
     travelerName: String,
     travelerEmail: String,
@@ -78,99 +104,59 @@ const BookingSchema = new mongoose.Schema(
 const Booking = mongoose.model("Booking", BookingSchema);
 
 // =============================================
-// ================ MONGOOSE ====================
+// ============ CONEXIÓN MONGODB ===============
 // =============================================
 mongoose
-  .connect(MONGO_URI, {
-    dbName: MONGODB_DB_NAME,
-  })
+  .connect(MONGO_URI, { dbName: MONGODB_DB_NAME })
   .then(async () => {
-    console.log("✅ MongoDB conectado correctamente a DB:", MONGODB_DB_NAME);
-    try {
-      const count = await Guide.countDocuments();
-      console.log("🐾 DEBUG: guides en esta DB al iniciar:", count);
-    } catch (err) {
-      console.error("❌ Error contando guides:", err);
-    }
+    console.log(`✅ MongoDB conectado → DB: ${MONGODB_DB_NAME}`);
+    const count = await Guide.countDocuments();
+    console.log("🐾 DEBUG cantidad guides:", count);
   })
   .catch((err) => console.error("❌ Error MongoDB:", err));
 
 // =============================================
-// =========== FUNCIONES DE PRECIO ==============
+// =========== FUNCIÓN DE PRECIOS ===============
 // =============================================
 function calcularPrecio(guide, hours) {
-  // Soporte para campos viejos (hourlyRate/dailyRate) o nuevos (priceHour/priceDay)
   const priceHour = guide.priceHour ?? guide.hourlyRate;
   const priceDay = guide.priceDay ?? guide.dailyRate;
 
   if (priceHour == null || priceDay == null) {
-    throw new Error("Guía sin tarifas definidas (priceHour/priceDay o hourlyRate/dailyRate)");
+    throw new Error(
+      "Guía sin tarifas (priceHour/priceDay o hourlyRate/dailyRate)"
+    );
   }
 
-  if (hours >= 1 && hours <= 7) {
-    return {
-      type: "HOURS",
-      total: hours * priceHour,
-    };
-  }
+  if (hours >= 1 && hours <= 7)
+    return { type: "HOURS", total: hours * priceHour };
 
-  if (hours === 8) {
-    return {
-      type: "DAY",
-      total: priceDay,
-    };
-  }
+  if (hours === 8) return { type: "DAY", total: priceDay };
 
   if (hours >= 9 && hours <= 12) {
     const extraHours = hours - 8;
-    const totalExtra = priceDay + extraHours * priceHour;
+    const total = priceDay + extraHours * priceHour;
 
     return {
       type: hours === 12 ? "PROMO_12H" : "EXTRA",
-      total: hours === 12 ? priceDay + 12 * priceHour : totalExtra,
+      total,
     };
   }
 
-  return {
-    type: "FULL_DAY_24H",
-    total: priceDay + 8 * priceHour,
-  };
+  return { type: "FULL_DAY_24H", total: priceDay + 8 * priceHour };
 }
-
-// =============================================
-// ================ MIDDLEWARES =================
-// =============================================
-
-// Webhook RAW body parser (Stripe requirement)
-app.use(
-  "/api/stripe/webhook",
-  bodyParser.raw({ type: "application/json" })
-);
-
-// JSON middleware para el resto
-app.use(express.json());
-
-// CORS
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST"],
-  })
-);
 
 // =============================================
 // ================ ENDPOINTS ===================
 // =============================================
 
-// HEALTH CHECK
+// HEALTH
 app.get("/api/health", (req, res) => {
-  const PORT = process.env.PORT || 4026;
-
   res.json({
     ok: true,
     env: process.env.NODE_ENV || "development",
-    port: PORT,
-    publicBaseUrl: process.env.PUBLIC_BASE_URL || "local",
+    port: process.env.PORT,
+    publicBaseUrl: process.env.PUBLIC_BASE_URL,
     db: mongoose.connection.readyState === 1,
     stripeKeyLoaded: STRIPE_SECRET_KEY.startsWith("sk_"),
   });
@@ -178,49 +164,84 @@ app.get("/api/health", (req, res) => {
 
 // LISTA DE GUÍAS
 app.get("/api/guides", async (req, res) => {
-  try {
-    const guides = await Guide.find();
-    res.json(guides);
-  } catch (err) {
-    console.error("❌ Error /api/guides:", err);
-    res.status(500).json({ error: "Error obteniendo guías" });
-  }
+  const guides = await Guide.find();
+  res.json(guides);
 });
 
-// DEBUG – VER DB Y GUIDES
-app.get("/api/debug/guides", async (req, res) => {
-  try {
-    const count = await Guide.countDocuments();
-    const guides = await Guide.find().lean();
-    res.json({
-      dbName: MONGODB_DB_NAME,
-      count,
-      guides,
-    });
-  } catch (err) {
-    console.error("❌ Error /api/debug/guides:", err);
-    res.status(500).json({ error: "debug error", details: err.message });
-  }
+// RESERVAS ADMIN
+app.get("/api/admin/bookings", async (req, res) => {
+  const bookings = await Booking.find().sort({ createdAt: -1 });
+  res.json(bookings);
 });
 
-// CREAR CHECKOUT REAL
+// CHECKOUT REAL + TEST (mismo endpoint)
 app.post("/api/payments/create-checkout", async (req, res) => {
   try {
-    const { guideId, hours, travelerName, travelerEmail } = req.body;
+    const {
+      guideId,
+      hours,
+      travelerName,
+      travelerEmail,
+      testMode,
+    } = req.body;
 
     console.log("💳 create-checkout payload:", {
       guideId,
       hours,
       travelerName,
       travelerEmail,
+      testMode,
     });
 
-    // 1) Intentar por id lógico
-    let guide = await Guide.findOne({ id: guideId });
+    // -----------------------------------------
+    // MODO TEST (botón "Test pago Stripe USD 10")
+    // -----------------------------------------
+    // Si NO viene guideId u hours => asumimos que es el TEST de frontend
+    if (!guideId || !hours) {
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        customer_email: travelerEmail || "test+frontend@iguideu.com",
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: "Test pago Stripe (USD 10) – I GUIDE U",
+              },
+              unit_amount: 10 * 100,
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: `${process.env.PUBLIC_BASE_URL}/success`,
+        cancel_url: `${process.env.PUBLIC_BASE_URL}/cancel`,
+      });
 
-    // 2) Si no hay id lógico, intentar por _id de Mongo
-    if (!guide && mongoose.Types.ObjectId.isValid(guideId)) {
+      console.log("✅ Checkout TEST creado:", session.id);
+
+      return res.json({
+        ok: true,
+        mode: "test",
+        amountUsd: 10,
+        stripeCheckoutSessionId: session.id,
+        url: session.url,
+      });
+    }
+
+    // -----------------------------------------
+    // MODO REAL (botón "Crear Checkout real y abrir Stripe")
+    // -----------------------------------------
+
+    // Buscamos primero por _id (frontend usa _id)
+    let guide = null;
+    if (mongoose.Types.ObjectId.isValid(guideId)) {
       guide = await Guide.findById(guideId);
+    }
+
+    // fallback por id lógico, por las dudas
+    if (!guide) {
+      guide = await Guide.findOne({ id: guideId });
     }
 
     if (!guide) {
@@ -229,16 +250,6 @@ app.post("/api/payments/create-checkout", async (req, res) => {
         .status(400)
         .json({ ok: false, error: "Guía no encontrado" });
     }
-
-    console.log("✅ Guía encontrado para checkout:", {
-      _id: guide._id,
-      id: guide.id,
-      name: guide.name,
-      priceHour: guide.priceHour,
-      priceDay: guide.priceDay,
-      hourlyRate: guide.hourlyRate,
-      dailyRate: guide.dailyRate,
-    });
 
     const price = calcularPrecio(guide, hours);
 
@@ -274,6 +285,8 @@ app.post("/api/payments/create-checkout", async (req, res) => {
       rawStripeSession: session,
     });
 
+    console.log("✅ Checkout REAL creado:", session.id);
+
     return res.json({
       ok: true,
       mode: "booking",
@@ -286,17 +299,6 @@ app.post("/api/payments/create-checkout", async (req, res) => {
   } catch (err) {
     console.error("❌ Error create-checkout:", err);
     res.status(500).json({ ok: false, error: "Error creando checkout" });
-  }
-});
-
-// ADMIN – RESERVAS
-app.get("/api/admin/bookings", async (req, res) => {
-  try {
-    const bookings = await Booking.find().sort({ createdAt: -1 });
-    res.json(bookings);
-  } catch (err) {
-    console.error("❌ Error /api/admin/bookings:", err);
-    res.status(500).json({ error: "Error obteniendo reservas" });
   }
 });
 
@@ -330,10 +332,38 @@ app.post("/api/stripe/webhook", async (req, res) => {
   res.json({ received: true });
 });
 
-// =======================================================
-// ======================= START SERVER ==================
-// =======================================================
+// =============================================
+// ==== PÁGINAS PARA SUCCESS Y CANCEL STRIPE ====
+// =============================================
+app.get("/success", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="es">
+      <head><meta charset="UTF-8"><title>Pago exitoso – I GUIDE U</title></head>
+      <body style="font-family: system-ui; text-align:center; padding:40px;">
+        <h1>✅ Pago exitoso</h1>
+        <p>Gracias por usar I GUIDE U.</p>
+      </body>
+    </html>
+  `);
+});
 
+app.get("/cancel", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="es">
+      <head><meta charset="UTF-8"><title>Pago cancelado – I GUIDE U</title></head>
+      <body style="font-family: system-ui; text-align:center; padding:40px;">
+        <h1>⚠️ Pago cancelado</h1>
+        <p>Puedes volver e intentar nuevamente.</p>
+      </body>
+    </html>
+  `);
+});
+
+// =============================================
+// ================ START SERVER ================
+// =============================================
 const PORT = process.env.PORT || 4026;
 
 app.listen(PORT, "0.0.0.0", () => {
