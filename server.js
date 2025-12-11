@@ -19,7 +19,6 @@ const app = express();
 // Stripe
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
 console.log(`🔑 STRIPE_SECRET_KEY preview: ${STRIPE_SECRET_KEY.slice(0, 10)}...(OK)`);
-
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 
 // MongoDB
@@ -29,8 +28,9 @@ console.log(
   MONGO_URI ? MONGO_URI.slice(0, 35) + "..." : "NOT SET"
 );
 
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "iguideu_local";
-console.log("DEBUG MONGODB_DB_NAME:", MONGODB_DB_NAME);
+// ⚠️ Forzamos SIEMPRE la base correcta:
+const MONGODB_DB_NAME = "iguideu";
+console.log("DEBUG MONGODB_DB_NAME (HARDCODED):", MONGODB_DB_NAME);
 
 // =============================================
 // ================ MODELOS =====================
@@ -84,16 +84,10 @@ mongoose
     dbName: MONGODB_DB_NAME,
   })
   .then(async () => {
-    console.log(
-      "✅ MongoDB conectado correctamente a DB:",
-      MONGODB_DB_NAME
-    );
+    console.log("✅ MongoDB conectado correctamente a DB:", MONGODB_DB_NAME);
     try {
       const count = await Guide.countDocuments();
-      console.log(
-        "🐾 DEBUG: guides en esta DB al iniciar:",
-        count
-      );
+      console.log("🐾 DEBUG: guides en esta DB al iniciar:", count);
     } catch (err) {
       console.error("❌ Error contando guides:", err);
     }
@@ -187,7 +181,7 @@ app.get("/api/guides", async (req, res) => {
   }
 });
 
-// DEBUG – VER DB Y GUIDES
+// DEBUG – VER DB Y GUIDES (por si lo necesitamos)
 app.get("/api/debug/guides", async (req, res) => {
   try {
     const count = await Guide.countDocuments();
