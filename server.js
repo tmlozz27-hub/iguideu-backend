@@ -33,30 +33,6 @@ const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "iguideu_local";
 console.log("DEBUG MONGODB_DB_NAME:", MONGODB_DB_NAME);
 
 // =============================================
-// ================ MONGOOSE ====================
-// =============================================
-mongoose
-  .connect(MONGO_URI, {
-    dbName: MONGODB_DB_NAME,
-  })
-  .then(async () => {
-    console.log(
-      "✅ MongoDB conectado correctamente a DB:",
-      MONGODB_DB_NAME
-    );
-    try {
-      const count = await Guide.countDocuments();
-      console.log(
-        "🐾 DEBUG: guides en esta DB al iniciar:",
-        count
-      );
-    } catch (err) {
-      console.error("❌ Error contando guides:", err);
-    }
-  })
-  .catch((err) => console.error("❌ Error MongoDB:", err));
-
-// =============================================
 // ================ MODELOS =====================
 // =============================================
 
@@ -101,6 +77,30 @@ const BookingSchema = new mongoose.Schema(
 const Booking = mongoose.model("Booking", BookingSchema);
 
 // =============================================
+// ================ MONGOOSE ====================
+// =============================================
+mongoose
+  .connect(MONGO_URI, {
+    dbName: MONGODB_DB_NAME,
+  })
+  .then(async () => {
+    console.log(
+      "✅ MongoDB conectado correctamente a DB:",
+      MONGODB_DB_NAME
+    );
+    try {
+      const count = await Guide.countDocuments();
+      console.log(
+        "🐾 DEBUG: guides en esta DB al iniciar:",
+        count
+      );
+    } catch (err) {
+      console.error("❌ Error contando guides:", err);
+    }
+  })
+  .catch((err) => console.error("❌ Error MongoDB:", err));
+
+// =============================================
 // =========== FUNCIONES DE PRECIO ==============
 // =============================================
 function calcularPrecio(guide, hours) {
@@ -138,15 +138,38 @@ function calcularPrecio(guide, hours) {
 }
 
 // =============================================
+// ================ MIDDLEWARES =================
+// =============================================
+
+// Webhook RAW body parser (Stripe requirement)
+app.use(
+  "/api/stripe/webhook",
+  bodyParser.raw({ type: "application/json" })
+);
+
+// JSON middleware para el resto
+app.use(express.json());
+
+// CORS
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+  })
+);
+
+// =============================================
 // ================ ENDPOINTS ===================
 // =============================================
 
 // HEALTH CHECK
 app.get("/api/health", (req, res) => {
+  const PORT = process.env.PORT || 4026;
+
   res.json({
     ok: true,
     env: process.env.NODE_ENV || "development",
-    port: process.env.PORT || 4026,
+    port: PORT,
     publicBaseUrl: process.env.PUBLIC_BASE_URL || "local",
     db: mongoose.connection.readyState === 1,
     stripeKeyLoaded: STRIPE_SECRET_KEY.startsWith("sk_"),
@@ -155,8 +178,29 @@ app.get("/api/health", (req, res) => {
 
 // LISTA DE GUÍAS
 app.get("/api/guides", async (req, res) => {
-  const guides = await Guide.find();
-  res.json(guides);
+  try {
+    const guides = await Guide.find();
+    res.json(guides);
+  } catch (err) {
+    console.error("❌ Error /api/guides:", err);
+    res.status(500).json({ error: "Error obteniendo guías" });
+  }
+});
+
+// DEBUG – VER DB Y GUIDES
+app.get("/api/debug/guides", async (req, res) => {
+  try {
+    const count = await Guide.countDocuments();
+    const guides = await Guide.find().lean();
+    res.json({
+      dbName: MONGODB_DB_NAME,
+      count,
+      guides,
+    });
+  } catch (err) {
+    console.error("❌ Error /api/debug/guides:", err);
+    res.status(500).json({ error: "debug error", details: err.message });
+  }
 });
 
 // CREAR CHECKOUT REAL
@@ -220,8 +264,13 @@ app.post("/api/payments/create-checkout", async (req, res) => {
 
 // ADMIN – RESERVAS
 app.get("/api/admin/bookings", async (req, res) => {
-  const bookings = await Booking.find().sort({ createdAt: -1 });
-  res.json(bookings);
+  try {
+    const bookings = await Booking.find().sort({ createdAt: -1 });
+    res.json(bookings);
+  } catch (err) {
+    console.error("❌ Error /api/admin/bookings:", err);
+    res.status(500).json({ error: "Error obteniendo reservas" });
+  }
 });
 
 // =============================================
