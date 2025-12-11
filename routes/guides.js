@@ -14,16 +14,15 @@ const router = express.Router();
  * - id, name, city, country
  * - rating
  * - priceHour, priceDay
- * - hourlyRate, dailyRate (por compatibilidad)
- * - languages
- * - description
+ * - hourlyRate, dailyRate
+ * - languages, description
  * - guideType ("OFFICIAL" | "INDEPENDENT")
  * - identityVerified (boolean)
  */
 router.get("/", async (req, res) => {
   try {
     const guides = await Guide.find(
-      { isActive: true },
+      { isActive: { $ne: false } }, // activo por defecto
       "id name city country rating priceHour priceDay hourlyRate dailyRate languages description guideType identityVerified"
     ).sort({ city: 1, name: 1 });
 
