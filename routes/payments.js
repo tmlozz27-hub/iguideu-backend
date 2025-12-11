@@ -3,6 +3,7 @@
 
 import express from "express";
 import Stripe from "stripe";
+import Booking from "../models/Booking.js";
 
 const router = express.Router();
 
@@ -31,7 +32,6 @@ router.get("/health", (req, res) => {
  * POST /api/payments/test-checkout
  *
  * Crea un Checkout de prueba en Stripe (USD 10 por defecto).
- * Lo usamos para debug interno.
  */
 router.post("/test-checkout", async (req, res) => {
   try {
@@ -87,9 +87,7 @@ router.post("/test-checkout", async (req, res) => {
  * - Recibe datos del guía + horas
  * - Calcula total = priceHour * hours
  * - Crea Checkout en Stripe
- *
- * NO crea Booking en la base todavía. Eso lo sumamos después
- * usando el webhook o una ruta admin específica.
+ * - Crea una Booking en MongoDB con estado "pending"
  */
 router.post("/create-checkout", async (req, res) => {
   try {
@@ -109,6 +107,8 @@ router.post("/create-checkout", async (req, res) => {
       priceDay,
       hours,
       durationType,
+      travelerName,
+      travelerEmail,
     } = req.body || {};
 
     if (!guideId || !guideName || !city || !country) {
@@ -128,8 +128,12 @@ router.post("/create-checkout", async (req, res) => {
       });
     }
 
+    const email =
+      travelerEmail && typeof travelerEmail === "string"
+        ? travelerEmail
+        : "test+frontend@iguideu.com";
+
     // Por ahora usamos un modelo simple: HOURS = priceHour * hours
-    // Más adelante agregamos FULL_DAY_8 / FULL_DAY_24 con reglas especiales.
     const totalUsd = safePriceHour * safeHours;
     const amount = Math.round(totalUsd * 100);
 
@@ -138,9 +142,11 @@ router.post("/create-checkout", async (req, res) => {
     if (durationType) descriptionParts.push(`Tipo: ${durationType}`);
     const description = descriptionParts.join(" · ");
 
+    // 1) Crear sesión de Checkout en Stripe
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
+      customer_email: email,
       line_items: [
         {
           price_data: {
@@ -166,6 +172,24 @@ router.post("/create-checkout", async (req, res) => {
         totalUsd: String(totalUsd),
         source: "iguideu-frontend-demo",
       },
+    });
+
+    // 2) Registrar la reserva en MongoDB con estado "pending"
+    await Booking.create({
+      guideId,
+      guideName,
+      city,
+      country,
+      travelerName: travelerName || null,
+      travelerEmail: email,
+      durationType: durationType || "HOURS",
+      hours: safeHours,
+      baseAmountUsd: totalUsd,
+      extraAmountUsd: 0,
+      totalAmountUsd: totalUsd,
+      paymentStatus: "pending",
+      stripeCheckoutSessionId: session.id,
+      source: "iguideu-frontend-demo",
     });
 
     return res.json({
