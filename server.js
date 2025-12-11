@@ -28,7 +28,7 @@ console.log(
   MONGO_URI ? MONGO_URI.slice(0, 35) + "..." : "NOT SET"
 );
 
-// ⚠️ Forzamos SIEMPRE la base correcta:
+// ⚠️ Usamos SIEMPRE la DB "iguideu"
 const MONGODB_DB_NAME = "iguideu";
 console.log("DEBUG MONGODB_DB_NAME (HARDCODED):", MONGODB_DB_NAME);
 
@@ -38,13 +38,14 @@ console.log("DEBUG MONGODB_DB_NAME (HARDCODED):", MONGODB_DB_NAME);
 
 const GuideSchema = new mongoose.Schema(
   {
-    id: String,
+    id: String,          // ID lógico (opcional)
     name: String,
     city: String,
     country: String,
     rating: Number,
-    priceHour: Number,
-    priceDay: Number,
+    priceHour: Number,   // usado por el backend
+    priceDay: Number     // usado por el backend
+    // si el doc tiene hourlyRate/dailyRate, los usamos de respaldo en calcularPrecio
   },
   { timestamps: true }
 );
@@ -53,7 +54,7 @@ const Guide = mongoose.model("Guide", GuideSchema);
 
 const BookingSchema = new mongoose.Schema(
   {
-    guideId: String,
+    guideId: String, // lo que nos mande el frontend (puede ser id lógico o _id)
     guideName: String,
     travelerName: String,
     travelerEmail: String,
@@ -98,8 +99,13 @@ mongoose
 // =========== FUNCIONES DE PRECIO ==============
 // =============================================
 function calcularPrecio(guide, hours) {
-  const priceHour = guide.priceHour;
-  const priceDay = guide.priceDay;
+  // Soporte para campos viejos (hourlyRate/dailyRate) o nuevos (priceHour/priceDay)
+  const priceHour = guide.priceHour ?? guide.hourlyRate;
+  const priceDay = guide.priceDay ?? guide.dailyRate;
+
+  if (priceHour == null || priceDay == null) {
+    throw new Error("Guía sin tarifas definidas (priceHour/priceDay o hourlyRate/dailyRate)");
+  }
 
   if (hours >= 1 && hours <= 7) {
     return {
@@ -181,7 +187,7 @@ app.get("/api/guides", async (req, res) => {
   }
 });
 
-// DEBUG – VER DB Y GUIDES (por si lo necesitamos)
+// DEBUG – VER DB Y GUIDES
 app.get("/api/debug/guides", async (req, res) => {
   try {
     const count = await Guide.countDocuments();
@@ -202,10 +208,37 @@ app.post("/api/payments/create-checkout", async (req, res) => {
   try {
     const { guideId, hours, travelerName, travelerEmail } = req.body;
 
-    const guide = await Guide.findOne({ id: guideId });
-    if (!guide) {
-      return res.status(400).json({ ok: false, error: "Guía no encontrado" });
+    console.log("💳 create-checkout payload:", {
+      guideId,
+      hours,
+      travelerName,
+      travelerEmail,
+    });
+
+    // 1) Intentar por id lógico
+    let guide = await Guide.findOne({ id: guideId });
+
+    // 2) Si no hay id lógico, intentar por _id de Mongo
+    if (!guide && mongoose.Types.ObjectId.isValid(guideId)) {
+      guide = await Guide.findById(guideId);
     }
+
+    if (!guide) {
+      console.log("❌ Guía no encontrado para guideId:", guideId);
+      return res
+        .status(400)
+        .json({ ok: false, error: "Guía no encontrado" });
+    }
+
+    console.log("✅ Guía encontrado para checkout:", {
+      _id: guide._id,
+      id: guide.id,
+      name: guide.name,
+      priceHour: guide.priceHour,
+      priceDay: guide.priceDay,
+      hourlyRate: guide.hourlyRate,
+      dailyRate: guide.dailyRate,
+    });
 
     const price = calcularPrecio(guide, hours);
 
