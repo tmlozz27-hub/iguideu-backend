@@ -72,7 +72,7 @@ app.get("/api/health", (req, res) => {
     ok: true,
     env: process.env.NODE_ENV || "development",
     port: PORT,
-    publicBaseUrl: process.env.PUBLIC_BASE_URL || null,
+    publicBaseUrl: process.env.PUBLIC_BASE_URL || "https://iguideu-backend-1.onrender.com",
     db: mongoose.connection.readyState === 1,
     stripeKeyLoaded: Boolean(STRIPE_SECRET_KEY),
   });
@@ -176,6 +176,39 @@ app.post("/api/admin/seed-guides", async (req, res) => {
     console.error("[ADMIN] Error en seed:", err);
     return res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+// ==================================================
+// Páginas simples para Stripe (success / cancel)
+// ==================================================
+app.get("/stripe-success.html", (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Pago de prueba – I GUIDE U</title>
+</head>
+<body style="font-family: sans-serif; padding: 2rem;">
+  <h1>✅ Pago de prueba completado</h1>
+  <p>Tu pago de prueba en Stripe se completó correctamente.</p>
+  <p>Podés cerrar esta pestaña y volver a I GUIDE U.</p>
+</body>
+</html>`);
+});
+
+app.get("/stripe-cancel.html", (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Pago cancelado – I GUIDE U</title>
+</head>
+<body style="font-family: sans-serif; padding: 2rem;">
+  <h1>⚠️ Pago cancelado</h1>
+  <p>Cancelaste el pago en Stripe.</p>
+  <p>Si fue un error, volvé a I GUIDE U y probá de nuevo.</p>
+</body>
+</html>`);
 });
 
 // ==================================================
