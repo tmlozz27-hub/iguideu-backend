@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 
 import Guide from "./models/Guide.js";
+import Booking from "./models/Booking.js";
 import guidesRouter from "./routes/guides.js";
 import bookingsRouter from "./routes/bookings.js";
 import paymentsRouter from "./routes/payments.js";
@@ -38,6 +39,9 @@ const PORT = process.env.PORT || 4026;
 const MONGO_URI = process.env.MONGO_URI;
 const DB_NAME = process.env.DB_NAME || "iguideu20";
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL || "https://iguideu-backend-1.onrender.com";
+const ADMIN_KEY = "ClaveUltraSecreta2025";
 
 // ------------------------
 // DEBUG
@@ -71,8 +75,8 @@ app.get("/api/health", (req, res) => {
   return res.json({
     ok: true,
     env: process.env.NODE_ENV || "development",
-    port: PORT,
-    publicBaseUrl: process.env.PUBLIC_BASE_URL || "https://iguideu-backend-1.onrender.com",
+    port: PORT.toString(),
+    publicBaseUrl: PUBLIC_BASE_URL,
     db: mongoose.connection.readyState === 1,
     stripeKeyLoaded: Boolean(STRIPE_SECRET_KEY),
   });
@@ -91,7 +95,7 @@ app.use("/api/payments", paymentsRouter);
 app.post("/api/admin/seed-guides", async (req, res) => {
   try {
     const adminKey = req.header("x-admin-key");
-    if (adminKey !== "ClaveUltraSecreta2025") {
+    if (adminKey !== ADMIN_KEY) {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
@@ -174,6 +178,44 @@ app.post("/api/admin/seed-guides", async (req, res) => {
     });
   } catch (err) {
     console.error("[ADMIN] Error en seed:", err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ==================================================
+// 🔥 RUTA ADMIN – LISTAR BOOKINGS (panel admin)
+// ==================================================
+app.get("/api/admin/bookings", async (req, res) => {
+  try {
+    const adminKey = req.header("x-admin-key");
+    if (adminKey !== ADMIN_KEY) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
+    const email = req.query.email;
+    let filter = {};
+
+    if (email) {
+      filter = {
+        $or: [
+          { travelerEmail: email },
+          { customerEmail: email },
+          { email },
+        ],
+      };
+    }
+
+    const bookings = await Booking.find(filter)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({
+      ok: true,
+      count: bookings.length,
+      value: bookings,
+    });
+  } catch (err) {
+    console.error("[ADMIN] Error listando bookings:", err);
     return res.status(500).json({ ok: false, error: err.message });
   }
 });

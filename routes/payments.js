@@ -31,8 +31,7 @@ router.get("/health", (req, res) => {
  * POST /api/payments/test-checkout
  *
  * Crea un Checkout de prueba en Stripe (USD 10 por defecto).
- * Body opcional:
- * { "amountUsd": 10 }
+ * Lo usamos para debug interno.
  */
 router.post("/test-checkout", async (req, res) => {
   try {
@@ -74,6 +73,109 @@ router.post("/test-checkout", async (req, res) => {
     });
   } catch (err) {
     console.error("[ERROR] /api/payments/test-checkout:", err);
+    return res.status(500).json({
+      ok: false,
+      error: err.message,
+    });
+  }
+});
+
+/**
+ * POST /api/payments/create-checkout
+ *
+ * Flujo real de reserva del viajero (simple):
+ * - Recibe datos del guía + horas
+ * - Calcula total = priceHour * hours
+ * - Crea Checkout en Stripe
+ *
+ * NO crea Booking en la base todavía. Eso lo sumamos después
+ * usando el webhook o una ruta admin específica.
+ */
+router.post("/create-checkout", async (req, res) => {
+  try {
+    if (!stripe || !STRIPE_SECRET_KEY) {
+      return res.status(500).json({
+        ok: false,
+        error: "Stripe no está configurado en el backend",
+      });
+    }
+
+    const {
+      guideId,
+      guideName,
+      city,
+      country,
+      priceHour,
+      priceDay,
+      hours,
+      durationType,
+    } = req.body || {};
+
+    if (!guideId || !guideName || !city || !country) {
+      return res.status(400).json({
+        ok: false,
+        error: "Faltan datos del guía (guideId, guideName, city, country).",
+      });
+    }
+
+    const safeHours = Number(hours) || 1;
+    const safePriceHour = Number(priceHour) || 0;
+
+    if (safePriceHour <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "priceHour inválido o no definido.",
+      });
+    }
+
+    // Por ahora usamos un modelo simple: HOURS = priceHour * hours
+    // Más adelante agregamos FULL_DAY_8 / FULL_DAY_24 con reglas especiales.
+    const totalUsd = safePriceHour * safeHours;
+    const amount = Math.round(totalUsd * 100);
+
+    const descriptionParts = [];
+    descriptionParts.push(`${safeHours} hs en ${city}, ${country}`);
+    if (durationType) descriptionParts.push(`Tipo: ${durationType}`);
+    const description = descriptionParts.join(" · ");
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `${guideName} – Reserva I GUIDE U`,
+              description,
+            },
+            unit_amount: amount,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: `${PUBLIC_BASE_URL}/stripe-success.html?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${PUBLIC_BASE_URL}/stripe-cancel.html`,
+      metadata: {
+        guideId,
+        guideName,
+        city,
+        country,
+        hours: String(safeHours),
+        durationType: durationType || "HOURS",
+        totalUsd: String(totalUsd),
+        source: "iguideu-frontend-demo",
+      },
+    });
+
+    return res.json({
+      ok: true,
+      url: session.url,
+      sessionId: session.id,
+      totalUsd,
+    });
+  } catch (err) {
+    console.error("[ERROR] /api/payments/create-checkout:", err);
     return res.status(500).json({
       ok: false,
       error: err.message,
