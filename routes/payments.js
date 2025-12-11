@@ -1,83 +1,53 @@
+// routes/payments.js
+// Pagos Stripe – I GUIDE U Backend 24
+
 import express from "express";
 import Stripe from "stripe";
-import dotenv from "dotenv";
-import Booking from "../models/Booking.js";
-
-dotenv.config();
 
 const router = express.Router();
 
-const stripeSecret = process.env.STRIPE_SECRET;
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL || "https://iguideu-backend-1.onrender.com";
 
-if (!stripeSecret) {
-  console.warn("⚠️ STRIPE_SECRET no está definido en process.env (payments.js)");
-}
+const stripe = STRIPE_SECRET_KEY
+  ? new Stripe(STRIPE_SECRET_KEY, {
+      apiVersion: "2025-08-27.basil",
+    })
+  : null;
 
-const stripe = stripeSecret ? new Stripe(stripeSecret) : null;
+/**
+ * GET /api/payments/health
+ * Pequeño healthcheck de pagos.
+ */
+router.get("/health", (req, res) => {
+  return res.json({
+    ok: true,
+    stripeKeyLoaded: Boolean(STRIPE_SECRET_KEY),
+  });
+});
 
-const FRONTEND_URL =
-  process.env.FRONTEND_URL ||
-  process.env.CLIENT_URL ||
-  "http://127.0.0.1:5181";
-
-router.post("/create-checkout", async (req, res) => {
+/**
+ * POST /api/payments/test-checkout
+ *
+ * Crea un Checkout de prueba en Stripe (USD 10 por defecto)
+ * usado por el frontend simple.
+ *
+ * Body opcional:
+ * { "amountUsd": 10 }
+ */
+router.post("/test-checkout", async (req, res) => {
   try {
-    if (!stripe) {
+    if (!stripe || !STRIPE_SECRET_KEY) {
       return res.status(500).json({
         ok: false,
-        error: "Stripe no está configurado (falta STRIPE_SECRET)",
+        error: "Stripe no está configurado en el backend",
       });
     }
 
-    const {
-      guideName,
-      city,
-      country,
-      durationType,
-      hoursCount,
-      totalUsd,
-      email,
-    } = req.body || {};
+    const amountUsd = Number(req.body?.amountUsd) || 10;
+    const amount = Math.round(amountUsd * 100); // centavos
 
-    if (!guideName || !durationType || !totalUsd) {
-      return res.status(400).json({
-        ok: false,
-        error: "Faltan datos de la reserva (guideName, durationType, totalUsd)",
-      });
-    }
-
-    const safeHours =
-      typeof hoursCount === "number" && hoursCount > 0 && hoursCount <= 24
-        ? hoursCount
-        : null;
-
-    let durationLabel = durationType;
-    if (durationType === "HOURS" && safeHours) {
-      durationLabel = `HOURS (${safeHours} hs)`;
-    } else if (durationType === "DAY") {
-      durationLabel = "DAY (8 hs)";
-    } else if (durationType === "FULL_DAY_24H") {
-      durationLabel = "FULL_DAY_24H (24 hs)";
-    }
-
-    // 1) Crear reserva PENDING en Mongo
-    const booking = await Booking.create({
-      guideName,
-      city,
-      country,
-      duration: durationLabel,
-      total: totalUsd,
-      email: email || "test+booking@iguideu.com",
-      paymentStatus: "PENDING",
-      meta: {
-        durationType,
-        hoursCount: safeHours,
-      },
-    });
-
-    const amountInCents = Math.round(Number(totalUsd) * 100);
-
-    // 2) Crear sesión de Checkout en Stripe
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
@@ -86,33 +56,34 @@ router.post("/create-checkout", async (req, res) => {
           price_data: {
             currency: "usd",
             product_data: {
-              name: `Reserva I GUIDE U – ${guideName}`,
+              name: "I GUIDE U – Test pago Stripe",
+              description: "Pago de prueba (demo backend 24)",
             },
-            unit_amount: amountInCents > 0 ? amountInCents : 1000, // fallback 10 USD
+            unit_amount: amount,
           },
           quantity: 1,
         },
       ],
-      success_url: `${FRONTEND_URL}?success=true&bookingId=${booking._id}`,
-      cancel_url: FRONTEND_URL,
-      metadata: {
-        bookingId: String(booking._id),
-        guideName,
-      },
+      success_url: `${PUBLIC_BASE_URL}/stripe-success.html?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${PUBLIC_BASE_URL}/stripe-cancel.html`,
     });
 
-    // 3) Guardar id de sesión Stripe en la reserva
-    booking.stripeCheckoutSessionId = session.id;
-    await booking.save();
-
-    return res.json({ ok: true, url: session.url, bookingId: booking._id });
+    return res.json({
+      ok: true,
+      url: session.url,
+      sessionId: session.id,
+      amountUsd,
+    });
   } catch (err) {
-    console.error("Stripe error en /payments/create-checkout", err);
+    console.error("[ERROR] /api/payments/test-checkout:", err);
     return res.status(500).json({
       ok: false,
-      error: err.message || "Error creando Checkout",
+      error: err.message,
     });
   }
 });
 
+// (Más adelante podemos agregar acá create-checkout real para bookings)
+
 export default router;
+
