@@ -30,9 +30,7 @@ router.get("/health", (req, res) => {
 /**
  * POST /api/payments/test-checkout
  *
- * Crea un Checkout de prueba en Stripe (USD 10 por defecto)
- * usado por el frontend simple.
- *
+ * Crea un Checkout de prueba en Stripe (USD 10 por defecto).
  * Body opcional:
  * { "amountUsd": 10 }
  */
@@ -83,7 +81,4 @@ router.post("/test-checkout", async (req, res) => {
   }
 });
 
-// (Más adelante podemos agregar acá create-checkout real para bookings)
-
 export default router;
-

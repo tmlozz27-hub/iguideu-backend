@@ -1,5 +1,92 @@
+// server.js - I GUIDE U Backend 24
+
+import express from "express";
+import cors from "cors";
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+
+import Guide from "./models/Guide.js";
+import guidesRouter from "./routes/guides.js";
+import bookingsRouter from "./routes/bookings.js";
+import paymentsRouter from "./routes/payments.js";
+
+dotenv.config();
+
+// ------------------------
+// APP & MIDDLEWARE
+// ------------------------
+const app = express();
+
+app.use(express.json());
+app.use(
+  cors({
+    origin: [
+      "http://127.0.0.1:5181",
+      "http://localhost:5181",
+      "http://192.168.0.4:5181",
+      "http://192.168.1.204:5181",
+      "https://iguideu-frontend.example.com",
+      "*",
+    ],
+  })
+);
+
+// ------------------------
+// VARIABLES
+// ------------------------
+const PORT = process.env.PORT || 4026;
+const MONGO_URI = process.env.MONGO_URI;
+const DB_NAME = process.env.DB_NAME || "iguideu20";
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+
+// ------------------------
+// DEBUG
+// ------------------------
+console.log(
+  "🔑 STRIPE_SECRET_KEY preview:",
+  STRIPE_SECRET_KEY ? STRIPE_SECRET_KEY.slice(0, 15) + "...(OK)" : "NO DEFINIDA"
+);
+console.log(
+  "DEBUG MONGO_URI prefix:",
+  MONGO_URI ? MONGO_URI.slice(0, 40) + "..." : "NO DEFINIDA"
+);
+console.log("DEBUG DB_NAME:", DB_NAME);
+
+// ------------------------
+// MONGO CONNECTION
+// ------------------------
+mongoose
+  .connect(MONGO_URI, { dbName: DB_NAME })
+  .then(() => {
+    console.log(`✅ MongoDB conectado → DB: ${DB_NAME}`);
+  })
+  .catch((err) => {
+    console.error("❌ Error conectando a MongoDB:", err);
+  });
+
+// ------------------------
+// HEALTH
+// ------------------------
+app.get("/api/health", (req, res) => {
+  return res.json({
+    ok: true,
+    env: process.env.NODE_ENV || "development",
+    port: PORT,
+    publicBaseUrl: process.env.PUBLIC_BASE_URL || null,
+    db: mongoose.connection.readyState === 1,
+    stripeKeyLoaded: Boolean(STRIPE_SECRET_KEY),
+  });
+});
+
+// ------------------------
+// RUTAS NORMALES
+// ------------------------
+app.use("/api/guides", guidesRouter);
+app.use("/api/bookings", bookingsRouter);
+app.use("/api/payments", paymentsRouter);
+
 // ==================================================
-// 🔥 RUTA ADMIN – SEED DEFINITIVO DE GUÍAS (OFICIAL/INDEPENDENT)
+// 🔥 RUTA ADMIN – SEED DEFINITIVO DE GUÍAS
 // ==================================================
 app.post("/api/admin/seed-guides", async (req, res) => {
   try {
@@ -26,7 +113,7 @@ app.post("/api/admin/seed-guides", async (req, res) => {
         guideType: "INDEPENDENT",
         identityVerified: true,
         verificationProvider: "manual",
-        verificationAt: new Date()
+        verificationAt: new Date(),
       },
       {
         id: "maya-kathmandu",
@@ -44,7 +131,7 @@ app.post("/api/admin/seed-guides", async (req, res) => {
         guideType: "OFFICIAL",
         identityVerified: true,
         verificationProvider: "manual",
-        verificationAt: new Date()
+        verificationAt: new Date(),
       },
       {
         id: "sofia-buenosaires",
@@ -62,8 +149,8 @@ app.post("/api/admin/seed-guides", async (req, res) => {
         guideType: "OFFICIAL",
         identityVerified: true,
         verificationProvider: "manual",
-        verificationAt: new Date()
-      }
+        verificationAt: new Date(),
+      },
     ];
 
     const deleted = await Guide.deleteMany({});
@@ -71,7 +158,7 @@ app.post("/api/admin/seed-guides", async (req, res) => {
       docs.map((d) => ({
         ...d,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       }))
     );
 
@@ -83,11 +170,17 @@ app.post("/api/admin/seed-guides", async (req, res) => {
       ok: true,
       deleted: deleted.deletedCount,
       inserted: inserted.length,
-      guides: inserted
+      guides: inserted,
     });
-
   } catch (err) {
     console.error("[ADMIN] Error en seed:", err);
     return res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+// ==================================================
+// START SERVER
+// ==================================================
+app.listen(PORT, () => {
+  console.log(`🚀 Backend 24 corriendo en http://0.0.0.0:${PORT}`);
 });
