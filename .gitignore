@@ -1,9 +1,55 @@
-node_modules
+# ---- I GUIDE U Backend 24 - .gitignore ----
+
+# Environment files (NEVER commit)
 .env
 .env.local
+.env.development
+.env.production
+.env.test
+
+# Node dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-dist
-coverage
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE / Editor settings
+.vscode/
+.idea/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+*.bak
+*.swp
+
+# Stripe CLI log files
+stripe.log
+
+# Cloudflare
+cloudflared.log
+
+# Prevent accidental commits of scripts
+*.ps1
+*.sh
+
+# Keep server files:
+!server.js
+!package.json
+!package-lock.json
