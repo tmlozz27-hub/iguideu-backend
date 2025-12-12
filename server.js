@@ -1,5 +1,5 @@
 // ======================================================
-// I GUIDE U - Backend24 - server.js ESTABLE FINAL
+// I GUIDE U - Backend24 - server.js ESTABLE 1.0
 // ======================================================
 
 import dotenv from "dotenv";
@@ -25,7 +25,7 @@ const CLIENT_URL =
   process.env.FRONTEND_URL ||
   "http://127.0.0.1:5181";
 
-// 🔑 Aceptamos DOS nombres para la clave admin
+// Claves admin
 const ADMIN_KEY =
   process.env.ADMIN_KEY ||
   process.env.ADMIN_API_KEY ||
@@ -44,14 +44,10 @@ const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 // ======================================================
 const app = express();
 
-// ------------------------------------------------------
-// CORS – abierto para el frontend (sin credenciales)
-// ------------------------------------------------------
+// CORS abierto para el frontend
 app.use(cors());
 
-// ------------------------------------------------------
 // Stripe Webhook (raw body)
-// ------------------------------------------------------
 app.post(
   "/api/stripe/webhook",
   bodyParser.raw({ type: "application/json" }),
@@ -79,12 +75,10 @@ app.post(
   }
 );
 
-// JSON normal para el resto
+// JSON normal
 app.use(express.json());
 
-// ======================================================
-// LOGS
-// ======================================================
+// Logs
 console.log("🔑 ADMIN_KEY cargada:", ADMIN_KEY ? "OK" : "NO_SET");
 console.log(
   "🔑 STRIPE_KEY preview:",
@@ -95,7 +89,7 @@ console.log(
   process.env.MONGO_URI ? process.env.MONGO_URI.slice(0, 30) : "NO_SET"
 );
 
-// 🔒 Forzamos DB estable
+// DB name
 const DB_NAME =
   process.env.DB_NAME || process.env.MONGODB_DB_NAME || "iguideu20";
 
@@ -165,16 +159,15 @@ const Guide = mongoose.models.Guide || mongoose.model("Guide", guideSchema);
 const Booking =
   mongoose.models.Booking || mongoose.model("Booking", bookingSchema);
 
-// 🔍 Log: contar guías al iniciar
+// Log count of guides
 mongoose.connection.once("open", async () => {
   try {
-    const guidesCount = await mongoose.connection
-      .db
-      .collection("guides")
+    const count = await mongoose.connection
+      .db.collection("guides")
       .countDocuments();
-    console.log("📊 Guides count at startup:", guidesCount);
+    console.log("📊 Guides count at startup:", count);
   } catch (err) {
-    console.error("❌ Error contando guías en startup:", err);
+    console.error("❌ Error contando guías:", err);
   }
 });
 
@@ -194,12 +187,12 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Obtener guías (colección directa)
+// Obtener guides
 app.get("/api/guides", async (req, res) => {
   try {
-    const collection = mongoose.connection.db.collection("guides");
-    const guides = await collection.find({}).toArray();
-    console.log("📥 /api/guides → docs encontrados:", guides.length);
+    const col = mongoose.connection.db.collection("guides");
+    const guides = await col.find({}).toArray();
+    console.log("📥 /api/guides:", guides.length);
     res.json({ ok: true, guides });
   } catch (err) {
     console.error("❌ Error en /api/guides:", err);
@@ -207,72 +200,50 @@ app.get("/api/guides", async (req, res) => {
   }
 });
 
-// ------------------------------------------------------
-// ADMIN – Seed guías (CON AUTH)
-// ------------------------------------------------------
-app.post("/api/admin/seed-guides", async (req, res) => {
+// ======================================================
+// BOOKINGS – Crear reserva inicial
+// ======================================================
+app.post("/api/bookings/create", async (req, res) => {
   try {
-    const incoming = req.headers["x-admin-key"];
+    const {
+      guideId,
+      guideName,
+      travelerEmail,
+      durationType,
+      hours,
+      totalAmountUsd,
+    } = req.body;
 
-    if (incoming !== ADMIN_KEY) {
-      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    if (!guideId || !travelerEmail || !durationType || !totalAmountUsd) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing fields",
+      });
     }
 
-    await Guide.deleteMany({});
+    const booking = await Booking.create({
+      guideId,
+      guideName,
+      travelerEmail,
+      durationType,
+      hours,
+      totalAmountUsd,
+      status: "pending",
+    });
 
-    const guides = await Guide.insertMany([
-      {
-        name: "Arun – Bangkok Local Guide",
-        city: "Bangkok",
-        country: "Tailandia",
-        hourlyRateUsd: 18,
-        dayRateUsd: 110,
-        fullDay24hRateUsd: 180,
-        languages: ["English", "Thai"],
-        rating: 4.8,
-        description:
-          "Experiencias locales en templos, mercados y vida nocturna.",
-      },
-      {
-        name: "Maya – Kathmandu Cultural Guide",
-        city: "Kathmandu",
-        country: "Nepal",
-        hourlyRateUsd: 15,
-        dayRateUsd: 95,
-        fullDay24hRateUsd: 160,
-        languages: ["English", "Nepali"],
-        rating: 5.0,
-        description:
-          "Cultura, templos y recorridos locales en Katmandú.",
-      },
-      {
-        name: "Sofia – Experta en Buenos Aires",
-        city: "Buenos Aires",
-        country: "Argentina",
-        hourlyRateUsd: 20,
-        dayRateUsd: 120,
-        fullDay24hRateUsd: 200,
-        languages: ["Spanish", "English"],
-        rating: 4.9,
-        description:
-          "Historia, cultura y gastronomía porteña.",
-      },
-    ]);
-
-    res.json({ ok: true, inserted: guides.length, guides });
+    res.json({ ok: true, booking });
   } catch (err) {
-    console.error("❌ Error en seed-guides:", err);
-    res.status(500).json({ ok: false, error: "Seed error" });
+    console.error("❌ Error creating booking:", err);
+    res.status(500).json({ ok: false, error: "Booking creation error" });
   }
 });
 
-// ------------------------------------------------------
-// ADMIN – Ver bookings (SÍ usa admin key)
-// ------------------------------------------------------
+// ======================================================
+// ADMIN – Ver bookings
+// ======================================================
 app.get("/api/admin/bookings", async (req, res) => {
   try {
     const incoming = req.headers["x-admin-key"];
-
     if (incoming !== ADMIN_KEY) {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
@@ -294,7 +265,62 @@ app.get("/api/admin/bookings", async (req, res) => {
 });
 
 // ======================================================
-// Stripe – Test checkout
+// SEED (con admin key)
+// ======================================================
+app.post("/api/admin/seed-guides", async (req, res) => {
+  try {
+    const incoming = req.headers["x-admin-key"];
+    if (incoming !== ADMIN_KEY) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
+    await Guide.deleteMany({});
+
+    const guides = await Guide.insertMany([
+      {
+        name: "Arun – Bangkok Local Guide",
+        city: "Bangkok",
+        country: "Tailandia",
+        hourlyRateUsd: 18,
+        dayRateUsd: 110,
+        fullDay24hRateUsd: 180,
+        languages: ["English", "Thai"],
+        rating: 4.8,
+        description: "Experiencias locales en templos, mercados y vida nocturna.",
+      },
+      {
+        name: "Maya – Kathmandu Cultural Guide",
+        city: "Kathmandu",
+        country: "Nepal",
+        hourlyRateUsd: 15,
+        dayRateUsd: 95,
+        fullDay24hRateUsd: 160,
+        languages: ["English", "Nepali"],
+        rating: 5.0,
+        description: "Cultura, templos y recorridos locales en Katmandú.",
+      },
+      {
+        name: "Sofia – Experta en Buenos Aires",
+        city: "Buenos Aires",
+        country: "Argentina",
+        hourlyRateUsd: 20,
+        dayRateUsd: 120,
+        fullDay24hRateUsd: 200,
+        languages: ["Spanish", "English"],
+        rating: 4.9,
+        description: "Historia, cultura y gastronomía porteña.",
+      },
+    ]);
+
+    res.json({ ok: true, inserted: guides.length, guides });
+  } catch (err) {
+    console.error("❌ Error seed:", err);
+    res.status(500).json({ ok: false, error: "Seed error" });
+  }
+});
+
+// ======================================================
+// Stripe – Test checkout simple
 // ======================================================
 app.post("/api/payments/create-checkout", async (req, res) => {
   try {
