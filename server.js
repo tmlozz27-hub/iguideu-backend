@@ -213,24 +213,29 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Obtener guías
+// Obtener guías (colección directa)
 app.get("/api/guides", async (req, res) => {
   try {
-    const guides = await Guide.find().lean();
+    const collection = mongoose.connection.db.collection("guides");
+    const guides = await collection.find({}).toArray();
+    console.log("📥 /api/guides → docs encontrados:", guides.length);
     res.json({ ok: true, guides });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error en /api/guides:", err);
     res.status(500).json({ ok: false, error: "Error listing guides" });
   }
 });
 
 // ------------------------------------------------------
-// ADMIN – Seed guías (SIN AUTH para avanzar)
+// ADMIN – Seed guías (CON AUTH)
 // ------------------------------------------------------
 app.post("/api/admin/seed-guides", async (req, res) => {
   try {
-    // 🔓 OJO: NO chequeamos x-admin-key a propósito para no trabarnos.
-    // Cuando todo esté estable, se puede volver a activar el check.
+    const incoming = req.headers["x-admin-key"];
+
+    if (incoming !== ADMIN_KEY) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
 
     await Guide.deleteMany({});
 
