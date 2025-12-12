@@ -45,28 +45,9 @@ const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 const app = express();
 
 // ------------------------------------------------------
-// CORS dinámico
+// CORS – abierto para el frontend (sin credenciales)
 // ------------------------------------------------------
-function getCorsOrigins() {
-  const raw = process.env.CORS_ORIGINS;
-  if (!raw) return [CLIENT_URL];
-
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-  } catch {}
-
-  return raw.split(",").map((v) => v.trim()).filter(Boolean);
-}
-
-const allowedOrigins = getCorsOrigins();
-
-app.use(
-  cors({
-    origin: allowedOrigins,
-    credentials: true,
-  })
-);
+app.use(cors());
 
 // ------------------------------------------------------
 // Stripe Webhook (raw body)
