@@ -184,6 +184,19 @@ const Guide = mongoose.models.Guide || mongoose.model("Guide", guideSchema);
 const Booking =
   mongoose.models.Booking || mongoose.model("Booking", bookingSchema);
 
+// 🔍 Log: contar guías al iniciar
+mongoose.connection.once("open", async () => {
+  try {
+    const guidesCount = await mongoose.connection
+      .db
+      .collection("guides")
+      .countDocuments();
+    console.log("📊 Guides count at startup:", guidesCount);
+  } catch (err) {
+    console.error("❌ Error contando guías en startup:", err);
+  }
+});
+
 // ======================================================
 // RUTAS
 // ======================================================
