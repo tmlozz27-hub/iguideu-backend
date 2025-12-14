@@ -139,6 +139,91 @@ app.post("/api/bookings", async (req, res) => {
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
+import Stripe from "stripe";
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
+  apiVersion: "2024-06-20",
+});
+
+// Crear checkout
+app.post("/api/payments/create-checkout", async (req, res) => {
+  try {
+    const { bookingId, totalUsd } = req.body || {};
+    if (!bookingId || totalUsd === undefined) {
+      return res.status(400).json({ ok: false, error: "Missing bookingId/totalUsd" });
+    }
+
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(500).json({ ok: false, error: "STRIPE_SECRET_KEY missing" });
+    }
+
+    const amount = Math.round(Number(totalUsd) * 100);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ ok: false, error: "Invalid amount" });
+    }
+
+    const successUrl = "iguideu://payment/success?session_id={CHECKOUT_SESSION_ID}";
+    const cancelUrl = "iguideu://payment/cancel";
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: amount,
+            product_data: {
+              name: "I GUIDE U - Booking",
+              description: `Booking ${bookingId}`,
+            },
+          },
+        },
+      ],
+      metadata: { bookingId: String(bookingId) },
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    });
+
+    return res.json({ ok: true, url: session.url, sessionId: session.id });
+  } catch (e) {
+    console.error("❌ create-checkout", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// WEBHOOK (Stripe debe enviar raw body)
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    try {
+      const sig = req.headers["stripe-signature"];
+      const whsec = process.env.STRIPE_WEBHOOK_SECRET;
+
+      if (!whsec) {
+        return res.status(500).send("Missing STRIPE_WEBHOOK_SECRET");
+      }
+
+      const event = stripe.webhooks.constructEvent(req.body, sig, whsec);
+
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object;
+        const bookingId = session?.metadata?.bookingId;
+
+        if (bookingId) {
+          await Booking.findByIdAndUpdate(bookingId, { paymentStatus: "paid" });
+          console.log("✅ Booking marked PAID:", bookingId);
+        }
+      }
+
+      res.json({ received: true });
+    } catch (err) {
+      console.error("❌ webhook error", err);
+      res.status(400).send(`Webhook Error`);
+    }
+  }
+);
 
 /* =========================
    START
