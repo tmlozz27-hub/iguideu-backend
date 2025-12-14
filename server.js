@@ -1,172 +1,213 @@
 import express from "express";
 import cors from "cors";
-import mongoose from "mongoose";
+import dotenv from "dotenv";
+import { MongoClient, ObjectId } from "mongodb";
+import Stripe from "stripe";
+
+import paymentReturnPages from "./routes/paymentReturnPages.js";
+
+dotenv.config();
 
 const app = express();
 
-/* =========================
-   MIDDLEWARE
-========================= */
-app.use(cors({ origin: "*" }));
-app.use(express.json());
+// ====== Config ======
+const PORT = process.env.PORT || 10000;
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://iguideu-backend-1.onrender.com";
 
-/* =========================
-   MONGO
-========================= */
 const MONGO_URI = process.env.MONGO_URI;
-const DB_NAME = process.env.DB_NAME || "iguideu20";
+const DB_NAME = process.env.DB_NAME || process.env.MONGO_DB || "iguideu20";
 
-if (!MONGO_URI) {
-  console.error("❌ MONGO_URI missing in env");
-}
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
 
-mongoose
-  .connect(MONGO_URI, { dbName: DB_NAME })
-  .then(() => console.log("✅ Mongo conectado:", DB_NAME))
-  .catch((e) => console.error("❌ Mongo error:", e));
+// CORS (simple y seguro para ahora)
+const corsOrigins = (process.env.CORS_ORIGINS || process.env.CORS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
-/* =========================
-   MODELS
-========================= */
-const GuideSchema = new mongoose.Schema(
-  {
-    name: String,
-    city: String,
-    country: String,
-    hourlyRateUsd: Number,
-    dayRateUsd: Number,
-    fullDay24hRateUsd: Number,
-    languages: [String],
-    rating: Number,
-    bio: String,
-    imageUrl: String,
-  },
-  { timestamps: true, collection: "guides" } // 👈 importante: usa la colección existente
+app.use(
+  cors({
+    origin: corsOrigins.length ? corsOrigins : true,
+    credentials: true,
+  })
 );
 
-const Guide = mongoose.models.Guide || mongoose.model("Guide", GuideSchema);
+// IMPORTANTE: webhook necesita raw body, por eso lo declaramos ANTES del json global
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    try {
+      if (!STRIPE_SECRET_KEY) {
+        return res.status(500).json({ ok: false, error: "STRIPE_SECRET_KEY missing" });
+      }
+      if (!STRIPE_WEBHOOK_SECRET) {
+        return res.status(500).json({ ok: false, error: "STRIPE_WEBHOOK_SECRET missing" });
+      }
 
-const BookingSchema = new mongoose.Schema(
-  {
-    guideId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    guideName: { type: String, required: true },
-    travelerEmail: { type: String, required: true },
+      const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-09-30.clover" });
 
-    hoursRequested: { type: Number, required: true },
-    durationType: {
-      type: String,
-      enum: ["HOURS", "DAY_8H", "FULL_DAY_24H"],
-      required: true,
-    },
+      const sig = req.headers["stripe-signature"];
+      let event;
 
-    totalUsd: { type: Number, required: true },
+      try {
+        event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+      } catch (err) {
+        console.log("❌ Webhook signature failed:", err?.message || err);
+        return res.status(400).send(`Webhook Error: ${err?.message || err}`);
+      }
 
-    paymentStatus: {
-      type: String,
-      enum: ["pending", "paid", "failed"],
-      default: "pending",
-    },
-  },
-  { timestamps: true, collection: "bookings" }
+      // Solo nos interesa checkout.session.completed
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object;
+        const bookingId = session?.metadata?.bookingId;
+
+        if (bookingId && db) {
+          await bookings().updateOne(
+            { _id: new ObjectId(String(bookingId)) },
+            { $set: { paymentStatus: "paid", stripeCheckoutSessionId: session.id, updatedAt: new Date() } }
+          );
+          console.log("✅ Booking marked PAID:", bookingId);
+        } else {
+          console.log("⚠️ Webhook received but no bookingId metadata");
+        }
+      }
+
+      res.json({ received: true });
+    } catch (e) {
+      console.log("❌ Webhook error:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  }
 );
 
-const Booking =
-  mongoose.models.Booking || mongoose.model("Booking", BookingSchema);
+// JSON global para el resto
+app.use(express.json({ limit: "1mb" }));
 
-/* =========================
-   HELPERS
-========================= */
-function inferDurationType(hours) {
-  if (hours === 24) return "FULL_DAY_24H";
-  if (hours >= 8) return "DAY_8H";
-  return "HOURS";
+// Return pages (HTTPS) para volver a la app
+app.use("/", paymentReturnPages);
+
+// ====== Mongo ======
+let client = null;
+let db = null;
+
+async function initMongo() {
+  if (!MONGO_URI) {
+    console.log("⚠️ MONGO_URI missing (db=false)");
+    return;
+  }
+  try {
+    client = new MongoClient(MONGO_URI);
+    await client.connect();
+    db = client.db(DB_NAME);
+    console.log("✅ Mongo conectado:", DB_NAME);
+  } catch (e) {
+    console.log("❌ Error MongoDB:", e?.message || e);
+    db = null;
+  }
 }
 
-/* =========================
-   ROUTES
-========================= */
+function guides() {
+  return db.collection("guides");
+}
+function bookings() {
+  return db.collection("bookings");
+}
+
+// ====== Routes ======
+
+// Health
 app.get("/api/health", async (req, res) => {
-  res.json({ ok: true, env: process.env.NODE_ENV || "production", dbName: DB_NAME });
+  res.json({
+    ok: true,
+    env: process.env.NODE_ENV || "production",
+    port: String(PORT),
+    publicBaseUrl: PUBLIC_BASE_URL,
+    db: !!db,
+    dbName: db ? DB_NAME : null,
+    stripeKeyLoaded: !!STRIPE_SECRET_KEY,
+  });
 });
 
-// ✅ RESTORE: GET /api/guides
+// Guides
 app.get("/api/guides", async (req, res) => {
   try {
-    const guides = await Guide.find({}).sort({ createdAt: -1 }).limit(200).lean();
-    return res.json({ ok: true, guides });
+    if (!db) return res.status(500).json({ ok: false, error: "DB not connected" });
+    const list = await guides().find({}).sort({ createdAt: -1 }).toArray();
+    res.json({ ok: true, guides: list });
   } catch (e) {
-    console.error("❌ GET /api/guides", e);
-    return res.status(500).json({ ok: false, error: "Server error" });
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 });
 
-// ✅ PHASE 4: POST /api/bookings
+// Bookings (create)
 app.post("/api/bookings", async (req, res) => {
   try {
-    const { guideId, guideName, travelerEmail, hoursRequested, totalUsd } =
-      req.body || {};
+    if (!db) return res.status(500).json({ ok: false, error: "DB not connected" });
 
-    if (!guideId || !guideName || !hoursRequested || totalUsd === undefined) {
+    const { guideId, guideName, travelerEmail, hoursRequested, totalUsd } = req.body || {};
+
+    if (!guideId || !guideName || !travelerEmail || !hoursRequested || !totalUsd) {
       return res.status(400).json({ ok: false, error: "Missing fields" });
     }
 
-    const hours = Number(hoursRequested);
+    const hrs = Number(hoursRequested);
     const total = Number(totalUsd);
 
-    if (!Number.isFinite(hours) || hours <= 0)
-      return res.status(400).json({ ok: false, error: "Invalid hours" });
+    let durationType = "HOURS";
+    if (hrs === 24) durationType = "FULL_DAY_24H";
+    else if (hrs >= 8) durationType = "DAY";
 
-    if (!Number.isFinite(total) || total < 0)
-      return res.status(400).json({ ok: false, error: "Invalid total" });
-
-    const booking = await Booking.create({
-      guideId,
-      guideName,
-      travelerEmail: travelerEmail || "test+frontend@iguideu.com",
-      hoursRequested: hours,
-      durationType: inferDurationType(hours),
+    const doc = {
+      guideId: String(guideId),
+      guideName: String(guideName),
+      travelerEmail: String(travelerEmail),
+      hoursRequested: hrs,
+      durationType,
       totalUsd: total,
       paymentStatus: "pending",
-    });
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
 
-    return res.json({
-      ok: true,
-      bookingId: booking._id.toString(),
-      booking,
-    });
+    const r = await bookings().insertOne(doc);
+
+    res.json({ ok: true, bookingId: String(r.insertedId), booking: { ...doc, _id: r.insertedId } });
   } catch (e) {
-    console.error("❌ POST /api/bookings", e);
-    return res.status(500).json({ ok: false, error: "Server error" });
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 });
-import Stripe from "stripe";
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-  apiVersion: "2024-06-20",
-});
 
-// Crear checkout
+// Stripe checkout
 app.post("/api/payments/create-checkout", async (req, res) => {
   try {
-    const { bookingId, totalUsd } = req.body || {};
-    if (!bookingId || totalUsd === undefined) {
-      return res.status(400).json({ ok: false, error: "Missing bookingId/totalUsd" });
+    if (!STRIPE_SECRET_KEY) {
+      return res.status(500).json({ ok: false, error: "STRIPE_SECRET_KEY missing" });
     }
 
-    if (!process.env.STRIPE_SECRET_KEY) {
-      return res.status(500).json({ ok: false, error: "STRIPE_SECRET_KEY missing" });
+    const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-09-30.clover" });
+
+    const { bookingId, totalUsd } = req.body || {};
+    if (!bookingId || !totalUsd) {
+      return res.status(400).json({ ok: false, error: "Missing bookingId/totalUsd" });
     }
 
     const amount = Math.round(Number(totalUsd) * 100);
     if (!Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ ok: false, error: "Invalid amount" });
+      return res.status(400).json({ ok: false, error: "Invalid totalUsd" });
     }
 
-    const successUrl = "iguideu://payment/success?session_id={CHECKOUT_SESSION_ID}";
-    const cancelUrl = "iguideu://payment/cancel";
+    // IMPORTANT: return pages HTTPS -> ahí tocás "Volver a la app"
+    const successUrl = `${PUBLIC_BASE_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&bookingId=${encodeURIComponent(
+      String(bookingId)
+    )}`;
+    const cancelUrl = `${PUBLIC_BASE_URL}/payment/cancel?bookingId=${encodeURIComponent(String(bookingId))}`;
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      payment_method_types: ["card"],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
       line_items: [
         {
           quantity: 1,
@@ -181,54 +222,16 @@ app.post("/api/payments/create-checkout", async (req, res) => {
         },
       ],
       metadata: { bookingId: String(bookingId) },
-      success_url: successUrl,
-      cancel_url: cancelUrl,
     });
 
-    return res.json({ ok: true, url: session.url, sessionId: session.id });
+    res.json({ ok: true, url: session.url, sessionId: session.id });
   } catch (e) {
-    console.error("❌ create-checkout", e);
-    return res.status(500).json({ ok: false, error: "Server error" });
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 });
 
-// WEBHOOK (Stripe debe enviar raw body)
-app.post(
-  "/api/stripe/webhook",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    try {
-      const sig = req.headers["stripe-signature"];
-      const whsec = process.env.STRIPE_WEBHOOK_SECRET;
-
-      if (!whsec) {
-        return res.status(500).send("Missing STRIPE_WEBHOOK_SECRET");
-      }
-
-      const event = stripe.webhooks.constructEvent(req.body, sig, whsec);
-
-      if (event.type === "checkout.session.completed") {
-        const session = event.data.object;
-        const bookingId = session?.metadata?.bookingId;
-
-        if (bookingId) {
-          await Booking.findByIdAndUpdate(bookingId, { paymentStatus: "paid" });
-          console.log("✅ Booking marked PAID:", bookingId);
-        }
-      }
-
-      res.json({ received: true });
-    } catch (err) {
-      console.error("❌ webhook error", err);
-      res.status(400).send(`Webhook Error`);
-    }
-  }
-);
-
-/* =========================
-   START
-========================= */
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log("🚀 Backend running on port", PORT);
+// ====== Start ======
+app.listen(PORT, async () => {
+  console.log(`🚀 Backend running on port ${PORT}`);
+  await initMongo();
 });
