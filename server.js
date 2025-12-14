@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 const app = express();
 
 /* =========================
-   BASIC MIDDLEWARE
+   MIDDLEWARE
 ========================= */
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -16,6 +16,10 @@ app.use(express.json());
 const MONGO_URI = process.env.MONGO_URI;
 const DB_NAME = process.env.DB_NAME || "iguideu20";
 
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI missing in env");
+}
+
 mongoose
   .connect(MONGO_URI, { dbName: DB_NAME })
   .then(() => console.log("✅ Mongo conectado:", DB_NAME))
@@ -24,6 +28,24 @@ mongoose
 /* =========================
    MODELS
 ========================= */
+const GuideSchema = new mongoose.Schema(
+  {
+    name: String,
+    city: String,
+    country: String,
+    hourlyRateUsd: Number,
+    dayRateUsd: Number,
+    fullDay24hRateUsd: Number,
+    languages: [String],
+    rating: Number,
+    bio: String,
+    imageUrl: String,
+  },
+  { timestamps: true, collection: "guides" } // 👈 importante: usa la colección existente
+);
+
+const Guide = mongoose.models.Guide || mongoose.model("Guide", GuideSchema);
+
 const BookingSchema = new mongoose.Schema(
   {
     guideId: { type: mongoose.Schema.Types.ObjectId, required: true },
@@ -38,13 +60,14 @@ const BookingSchema = new mongoose.Schema(
     },
 
     totalUsd: { type: Number, required: true },
+
     paymentStatus: {
       type: String,
       enum: ["pending", "paid", "failed"],
       default: "pending",
     },
   },
-  { timestamps: true }
+  { timestamps: true, collection: "bookings" }
 );
 
 const Booking =
@@ -62,13 +85,22 @@ function inferDurationType(hours) {
 /* =========================
    ROUTES
 ========================= */
-
-// health
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true });
+app.get("/api/health", async (req, res) => {
+  res.json({ ok: true, env: process.env.NODE_ENV || "production", dbName: DB_NAME });
 });
 
-// CREATE BOOKING (FASE 4)
+// ✅ RESTORE: GET /api/guides
+app.get("/api/guides", async (req, res) => {
+  try {
+    const guides = await Guide.find({}).sort({ createdAt: -1 }).limit(200).lean();
+    return res.json({ ok: true, guides });
+  } catch (e) {
+    console.error("❌ GET /api/guides", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ✅ PHASE 4: POST /api/bookings
 app.post("/api/bookings", async (req, res) => {
   try {
     const { guideId, guideName, travelerEmail, hoursRequested, totalUsd } =
@@ -97,14 +129,14 @@ app.post("/api/bookings", async (req, res) => {
       paymentStatus: "pending",
     });
 
-    res.json({
+    return res.json({
       ok: true,
       bookingId: booking._id.toString(),
       booking,
     });
   } catch (e) {
     console.error("❌ POST /api/bookings", e);
-    res.status(500).json({ ok: false, error: "Server error" });
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 
