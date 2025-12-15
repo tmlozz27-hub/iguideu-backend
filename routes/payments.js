@@ -1,210 +1,109 @@
-// routes/payments.js
-// Pagos Stripe – I GUIDE U Backend 24
-
 import express from "express";
 import Stripe from "stripe";
+import Guide from "../models/Guide.js";
 import Booking from "../models/Booking.js";
 
 const router = express.Router();
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-const PUBLIC_BASE_URL =
-  process.env.PUBLIC_BASE_URL || "https://iguideu-backend-1.onrender.com";
+function must(v, name) {
+  if (!v) throw new Error(`${name} missing`);
+  return v;
+}
 
-const stripe = STRIPE_SECRET_KEY
-  ? new Stripe(STRIPE_SECRET_KEY, {
-      apiVersion: "2025-08-27.basil",
-    })
-  : null;
+function computeTotalUsd(guide, durationType, hours) {
+  const hour = guide.priceHourUsd ?? guide.priceHour ?? guide.hourlyRate;
+  const day = guide.priceDayUsd ?? guide.priceDay ?? guide.dailyRate;
 
-/**
- * GET /api/payments/health
- * Pequeño healthcheck de pagos.
- */
-router.get("/health", (req, res) => {
-  return res.json({
-    ok: true,
-    stripeKeyLoaded: Boolean(STRIPE_SECRET_KEY),
-  });
-});
-
-/**
- * POST /api/payments/test-checkout
- *
- * Crea un Checkout de prueba en Stripe (USD 10 por defecto).
- */
-router.post("/test-checkout", async (req, res) => {
-  try {
-    if (!stripe || !STRIPE_SECRET_KEY) {
-      return res.status(500).json({
-        ok: false,
-        error: "Stripe no está configurado en el backend",
-      });
-    }
-
-    const amountUsd = Number(req.body?.amountUsd) || 10;
-    const amount = Math.round(amountUsd * 100); // centavos
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: "I GUIDE U – Test pago Stripe",
-              description: "Pago de prueba (demo backend 24)",
-            },
-            unit_amount: amount,
-          },
-          quantity: 1,
-        },
-      ],
-      success_url: `${PUBLIC_BASE_URL}/stripe-success.html?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${PUBLIC_BASE_URL}/stripe-cancel.html`,
-    });
-
-    return res.json({
-      ok: true,
-      url: session.url,
-      sessionId: session.id,
-      amountUsd,
-    });
-  } catch (err) {
-    console.error("[ERROR] /api/payments/test-checkout:", err);
-    return res.status(500).json({
-      ok: false,
-      error: err.message,
-    });
+  if (durationType === "HOURS") {
+    const h = Math.max(1, Math.min(7, Number(hours || 1)));
+    return { totalUsd: Number(hour) * h, normalized: { durationType: "HOURS", hours: h } };
   }
-});
 
-/**
- * POST /api/payments/create-checkout
- *
- * Flujo real de reserva del viajero (simple):
- * - Recibe datos del guía + horas
- * - Calcula total = priceHour * hours
- * - Crea Checkout en Stripe
- * - Crea una Booking en MongoDB con estado "pending"
- */
+  if (durationType === "FULL_DAY_8") {
+    return { totalUsd: Number(day), normalized: { durationType: "FULL_DAY_8", hours: 8 } };
+  }
+
+  if (durationType === "FULL_DAY_24H") {
+    // regla simple por ahora: 24h = day + 16h extra (si querés otra, la cambiamos)
+    const total = Number(day) + Number(hour) * 16;
+    return { totalUsd: total, normalized: { durationType: "FULL_DAY_24H", hours: 24 } };
+  }
+
+  throw new Error("Invalid durationType");
+}
+
 router.post("/create-checkout", async (req, res) => {
   try {
-    if (!stripe || !STRIPE_SECRET_KEY) {
-      return res.status(500).json({
-        ok: false,
-        error: "Stripe no está configurado en el backend",
-      });
-    }
+    const stripeKey = must(process.env.STRIPE_SECRET_KEY, "STRIPE_SECRET_KEY");
+    const stripe = new Stripe(stripeKey);
 
-    const {
-      guideId,
-      guideName,
-      city,
-      country,
-      priceHour,
-      priceDay,
-      hours,
-      durationType,
-      travelerName,
-      travelerEmail,
-    } = req.body || {};
+    const { guideId, durationType, hours, email } = req.body || {};
+    if (!guideId) return res.status(400).json({ error: "guideId required" });
+    if (!durationType) return res.status(400).json({ error: "durationType required" });
+    if (!email) return res.status(400).json({ error: "email required" });
 
-    if (!guideId || !guideName || !city || !country) {
-      return res.status(400).json({
-        ok: false,
-        error: "Faltan datos del guía (guideId, guideName, city, country).",
-      });
-    }
+    const guide = await Guide.findById(guideId);
+    if (!guide) return res.status(404).json({ error: "Guide not found" });
 
-    const safeHours = Number(hours) || 1;
-    const safePriceHour = Number(priceHour) || 0;
+    const { totalUsd, normalized } = computeTotalUsd(guide, durationType, hours);
 
-    if (safePriceHour <= 0) {
-      return res.status(400).json({
-        ok: false,
-        error: "priceHour inválido o no definido.",
-      });
-    }
+    // crear booking en DB
+    const booking = await Booking.create({
+      guideId: guide._id,
+      guideName: guide.name,
+      city: guide.city,
+      email,
+      durationType: normalized.durationType,
+      hours: normalized.hours,
+      totalUsd,
+      paymentStatus: "pending",
+    });
 
-    const email =
-      travelerEmail && typeof travelerEmail === "string"
-        ? travelerEmail
-        : "test+frontend@iguideu.com";
+    const publicBase = (process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 4026}`).replace(/\/+$/, "");
 
-    // Por ahora usamos un modelo simple: HOURS = priceHour * hours
-    const totalUsd = safePriceHour * safeHours;
-    const amount = Math.round(totalUsd * 100);
+    const successUrl = `${publicBase}/return/success?bookingId=${booking._id}`;
+    const cancelUrl = `${publicBase}/return/cancel?bookingId=${booking._id}`;
 
-    const descriptionParts = [];
-    descriptionParts.push(`${safeHours} hs en ${city}, ${country}`);
-    if (durationType) descriptionParts.push(`Tipo: ${durationType}`);
-    const description = descriptionParts.join(" · ");
-
-    // 1) Crear sesión de Checkout en Stripe
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      payment_method_types: ["card"],
       customer_email: email,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
       line_items: [
         {
+          quantity: 1,
           price_data: {
             currency: "usd",
+            unit_amount: Math.round(Number(totalUsd) * 100),
             product_data: {
-              name: `${guideName} – Reserva I GUIDE U`,
-              description,
+              name: `${guide.name} – ${normalized.durationType}`,
+              description: `${guide.city || ""}`.trim(),
             },
-            unit_amount: amount,
           },
-          quantity: 1,
         },
       ],
-      success_url: `${PUBLIC_BASE_URL}/stripe-success.html?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${PUBLIC_BASE_URL}/stripe-cancel.html`,
       metadata: {
-        guideId,
-        guideName,
-        city,
-        country,
-        hours: String(safeHours),
-        durationType: durationType || "HOURS",
+        bookingId: String(booking._id),
+        guideId: String(guide._id),
+        durationType: String(normalized.durationType),
+        hours: String(normalized.hours),
         totalUsd: String(totalUsd),
-        source: "iguideu-frontend-demo",
       },
     });
 
-    // 2) Registrar la reserva en MongoDB con estado "pending"
-    await Booking.create({
-      guideId,
-      guideName,
-      city,
-      country,
-      travelerName: travelerName || null,
-      travelerEmail: email,
-      durationType: durationType || "HOURS",
-      hours: safeHours,
-      baseAmountUsd: totalUsd,
-      extraAmountUsd: 0,
-      totalAmountUsd: totalUsd,
-      paymentStatus: "pending",
-      stripeCheckoutSessionId: session.id,
-      source: "iguideu-frontend-demo",
-    });
-
     return res.json({
       ok: true,
       url: session.url,
-      sessionId: session.id,
+      bookingId: booking._id,
       totalUsd,
+      durationType: normalized.durationType,
+      hours: normalized.hours,
     });
   } catch (err) {
-    console.error("[ERROR] /api/payments/create-checkout:", err);
-    return res.status(500).json({
-      ok: false,
-      error: err.message,
-    });
+    console.error("❌ create-checkout error:", err?.message || err);
+    return res.status(500).json({ error: "create-checkout failed" });
   }
 });
 
 export default router;
+
