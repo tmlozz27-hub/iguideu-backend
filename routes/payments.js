@@ -1,107 +1,91 @@
 import express from "express";
 import Stripe from "stripe";
-import Guide from "../models/Guide.js";
 import Booking from "../models/Booking.js";
 
 const router = express.Router();
 
-function must(v, name) {
-  if (!v) throw new Error(`${name} missing`);
-  return v;
+router.get("/health", (req, res) => {
+  res.json({ ok: true, payments: true });
+});
+
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("Missing STRIPE_SECRET_KEY");
+  return new Stripe(key, { apiVersion: "2024-06-20" });
 }
 
-function computeTotalUsd(guide, durationType, hours) {
-  const hour = guide.priceHourUsd ?? guide.priceHour ?? guide.hourlyRate;
-  const day = guide.priceDayUsd ?? guide.priceDay ?? guide.dailyRate;
+function bookingAmountUsd(b) {
+  const t = Number(b.totalUsd ?? b.total ?? 0);
+  if (Number.isFinite(t) && t > 0) return t;
 
-  if (durationType === "HOURS") {
-    const h = Math.max(1, Math.min(7, Number(hours || 1)));
-    return { totalUsd: Number(hour) * h, normalized: { durationType: "HOURS", hours: h } };
-  }
+  const hours = Number(b.hours ?? 0);
+  if (Number.isFinite(hours) && hours > 0) return hours * 18;
 
-  if (durationType === "FULL_DAY_8") {
-    return { totalUsd: Number(day), normalized: { durationType: "FULL_DAY_8", hours: 8 } };
-  }
-
-  if (durationType === "FULL_DAY_24H") {
-    // regla simple por ahora: 24h = day + 16h extra (si querés otra, la cambiamos)
-    const total = Number(day) + Number(hour) * 16;
-    return { totalUsd: total, normalized: { durationType: "FULL_DAY_24H", hours: 24 } };
-  }
-
-  throw new Error("Invalid durationType");
+  return 10;
 }
 
-router.post("/create-checkout", async (req, res) => {
+router.post("/checkout", async (req, res) => {
   try {
-    const stripeKey = must(process.env.STRIPE_SECRET_KEY, "STRIPE_SECRET_KEY");
-    const stripe = new Stripe(stripeKey);
+    const { bookingId } = req.body || {};
+    if (!bookingId) return res.status(400).json({ ok: false, error: "bookingId requerido" });
 
-    const { guideId, durationType, hours, email } = req.body || {};
-    if (!guideId) return res.status(400).json({ error: "guideId required" });
-    if (!durationType) return res.status(400).json({ error: "durationType required" });
-    if (!email) return res.status(400).json({ error: "email required" });
+    const booking = await Booking.findById(bookingId);
+    if (!booking) return res.status(404).json({ ok: false, error: "booking no encontrada" });
 
-    const guide = await Guide.findById(guideId);
-    if (!guide) return res.status(404).json({ error: "Guide not found" });
-
-    const { totalUsd, normalized } = computeTotalUsd(guide, durationType, hours);
-
-    // crear booking en DB
-    const booking = await Booking.create({
-      guideId: guide._id,
-      guideName: guide.name,
-      city: guide.city,
-      email,
-      durationType: normalized.durationType,
-      hours: normalized.hours,
-      totalUsd,
-      paymentStatus: "pending",
-    });
-
-    const publicBase = (process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 4026}`).replace(/\/+$/, "");
-
-    const successUrl = `${publicBase}/return/success?bookingId=${booking._id}`;
-    const cancelUrl = `${publicBase}/return/cancel?bookingId=${booking._id}`;
+    const stripe = getStripe();
+    const amountUsd = bookingAmountUsd(booking);
+    const amountCents = Math.round(amountUsd * 100);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      customer_email: email,
-      success_url: successUrl,
-      cancel_url: cancelUrl,
+      success_url: "https://example.com/success",
+      cancel_url: "https://example.com/cancel",
       line_items: [
         {
           quantity: 1,
           price_data: {
             currency: "usd",
-            unit_amount: Math.round(Number(totalUsd) * 100),
+            unit_amount: amountCents,
             product_data: {
-              name: `${guide.name} – ${normalized.durationType}`,
-              description: `${guide.city || ""}`.trim(),
+              name: booking.guideName || "IGUIDEU Booking",
+              description: `${booking.city || ""}${booking.country ? " · " + booking.country : ""}`.trim(),
             },
           },
         },
       ],
-      metadata: {
-        bookingId: String(booking._id),
-        guideId: String(guide._id),
-        durationType: String(normalized.durationType),
-        hours: String(normalized.hours),
-        totalUsd: String(totalUsd),
-      },
+      metadata: { bookingId: String(booking._id) },
     });
 
-    return res.json({
-      ok: true,
-      url: session.url,
-      bookingId: booking._id,
-      totalUsd,
-      durationType: normalized.durationType,
-      hours: normalized.hours,
-    });
-  } catch (err) {
-    console.error("❌ create-checkout error:", err?.message || err);
-    return res.status(500).json({ error: "create-checkout failed" });
+    booking.stripeCheckoutSessionId = session.id;
+    await booking.save();
+
+    return res.json({ ok: true, url: session.url, sessionId: session.id });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: "error creando checkout", details: String(e?.message || e) });
+  }
+});
+
+router.get("/sync/:sessionId", async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const stripe = getStripe();
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const paymentStatus = String(session.payment_status || "").toLowerCase();
+
+    const bookingId = session.metadata?.bookingId;
+    if (bookingId) {
+      const booking = await Booking.findById(bookingId);
+      if (booking) {
+        if (paymentStatus === "paid") booking.paymentStatus = "paid";
+        booking.stripeCheckoutSessionId = session.id;
+        await booking.save();
+      }
+    }
+
+    return res.json({ ok: true, sessionId: session.id, payment_status: session.payment_status, bookingId: bookingId || null });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: "error sync", details: String(e?.message || e) });
   }
 });
 
