@@ -1,80 +1,131 @@
-// routes/bookings.js — POST REAL (modo demo, sin Stripe)
-// ✅ Crea reserva en Mongo
-// ✅ GET por email
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { apiGet, API_BASE } from "../lib/api";
 
-import express from "express";
+type Guide = {
+  _id: string;
+  name?: string;
+  city?: string;
+  country?: string;
+  hourlyRateUsd?: number;
+  dayRateUsd?: number;
+};
 
-const router = express.Router();
+export default function BookingScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ guideId?: string }>();
+  const guideId = params.guideId || "";
 
-async function loadBookingModel() {
-  const tries = [
-    "../models/Booking.js",
-    "../models/booking.js",
-    "../src/models/Booking.js",
-    "../src/models/booking.js",
-  ];
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [guide, setGuide] = useState<Guide | null>(null);
 
-  for (const p of tries) {
-    try {
-      const mod = await import(p);
-      const Booking = mod?.default || mod?.Booking || null;
-      if (Booking) return Booking;
-    } catch {}
-  }
-  return null;
-}
+  const [email, setEmail] = useState("test+frontend@iguideu.com");
+  const [hours, setHours] = useState(3);
+  const [dayType, setDayType] = useState<"HOURS" | "DAY">("HOURS");
 
-// ===== GET /api/bookings?email= =====
-router.get("/", async (req, res) => {
-  try {
-    const email = String(req.query.email || "").trim().toLowerCase();
-    if (!email) return res.status(400).json({ ok: false, error: "email requerido" });
+  useEffect(() => {
+    (async () => {
+      const data = await apiGet("/api/guides");
+      const g = data?.guides?.find((x: any) => x._id === guideId);
+      setGuide(g || null);
+      setLoading(false);
+    })();
+  }, [guideId]);
 
-    const Booking = await loadBookingModel();
-    if (!Booking) return res.status(500).json({ ok: false, error: "Booking model no encontrado" });
+  const totalUsd = useMemo(() => {
+    if (!guide) return 0;
+    if (dayType === "DAY") return guide.dayRateUsd || 0;
+    return (guide.hourlyRateUsd || 0) * hours;
+  }, [guide, hours, dayType]);
 
-    const bookings = await Booking.find({ $or: [{ email }, { travelerEmail: email }] })
-      .sort({ createdAt: -1 })
-      .limit(200);
+  const createBooking = async () => {
+    if (!guide) return;
+    setCreating(true);
 
-    return res.json({ ok: true, bookings });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: "error listando reservas", details: String(e.message || e) });
-  }
-});
-
-// ===== POST /api/bookings =====
-router.post("/", async (req, res) => {
-  try {
-    const { guideId, guideName, city, country, email, hours, dayType, totalUsd } = req.body || {};
-
-    if (!guideId || !guideName || !email || totalUsd === undefined || totalUsd === null) {
-      return res.status(400).json({ ok: false, error: "faltan campos obligatorios" });
-    }
-
-    const Booking = await loadBookingModel();
-    if (!Booking) return res.status(500).json({ ok: false, error: "Booking model no encontrado" });
-
-    const booking = await Booking.create({
+    const body = {
       guideId,
-      guideName,
-      city: city || null,
-      country: country || null,
-      email: String(email).toLowerCase(),
-      hours: hours ?? null,
-      dayType: dayType || "HOURS",
+      guideName: guide.name,
+      city: guide.city,
+      country: guide.country,
+      email,
+      hours,
+      dayType,
       totalUsd,
-      paymentStatus: "pending", // ✅ FIX: enum acepta minúscula
-      source: "APP",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    };
 
-    return res.status(201).json({ ok: true, booking });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: "error creando reserva", details: String(e.message || e) });
+    try {
+      const res = await fetch(`${API_BASE}/api/bookings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Error");
+
+      alert(`Reserva creada ✅\nID: ${data.booking._id}`);
+      router.replace("/reservas");
+    } catch (e: any) {
+      alert(`ERROR creando reserva: ${e.message}`);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator />
+      </SafeAreaView>
+    );
   }
-});
 
-export default router;
+  return (
+    <SafeAreaView style={{ flex: 1, padding: 16 }}>
+      <Text style={{ fontSize: 22, fontWeight: "900" }}>Reservar</Text>
 
+      <Text style={{ marginTop: 8, fontWeight: "800" }}>{guide?.name}</Text>
+      <Text>{guide?.city} · {guide?.country}</Text>
+      <Text>${guide?.hourlyRateUsd} / hora · ${guide?.dayRateUsd} / día</Text>
+
+      <TextInput
+        value={email}
+        onChangeText={setEmail}
+        style={{ borderWidth: 1, marginTop: 12, padding: 10 }}
+      />
+
+      <Pressable
+        onPress={() => setDayType("HOURS")}
+        style={{ marginTop: 12 }}
+      >
+        <Text>Horas</Text>
+      </Pressable>
+
+      <Pressable
+        onPress={() => setDayType("DAY")}
+        style={{ marginTop: 4 }}
+      >
+        <Text>Día</Text>
+      </Pressable>
+
+      <Pressable
+        onPress={createBooking}
+        style={{ backgroundColor: "#111", padding: 14, marginTop: 20 }}
+        disabled={creating}
+      >
+        <Text style={{ color: "white", textAlign: "center", fontWeight: "900" }}>
+          {creating ? "Creando..." : "Crear reserva (USD " + totalUsd + ")"}
+        </Text>
+      </Pressable>
+    </SafeAreaView>
+  );
+}

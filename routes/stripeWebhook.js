@@ -1,57 +1,56 @@
+// routes/stripeWebhook.js (ESM)
+// Webhook Stripe: valida firma y marca booking como "paid" cuando corresponde.
+
 import express from "express";
 import Stripe from "stripe";
 import Booking from "../models/Booking.js";
 
 const router = express.Router();
 
-async function handler(req, res) {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) return res.status(500).send("STRIPE_WEBHOOK_SECRET missing");
-
-  let event;
+// Stripe webhook necesita RAW body para validar firma
+router.post("/", express.raw({ type: "application/json" }), async (req, res) => {
   try {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    if (!secretKey) return res.status(500).send("Missing STRIPE_SECRET_KEY");
+    if (!webhookSecret) return res.status(500).send("Missing STRIPE_WEBHOOK_SECRET");
+
+    const stripe = new Stripe(secretKey, { apiVersion: "2024-06-20" });
+
     const sig = req.headers["stripe-signature"];
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
-    event = stripe.webhooks.constructEvent(req.body, sig, secret);
-  } catch (err) {
-    console.error("❌ webhook signature failed:", err?.message || err);
-    return res.status(400).send(`Webhook Error: ${err?.message || "invalid signature"}`);
-  }
+    if (!sig) return res.status(400).send("Missing stripe-signature");
 
-  try {
-    console.log("🔔 webhook event:", event.type);
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    } catch (err) {
+      return res.status(400).send(`Webhook signature verification failed: ${err.message}`);
+    }
 
+    // Eventos más comunes para “pago confirmado”
     if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      const bookingId = session?.metadata?.bookingId;
+      const session = event.data?.object;
 
-      console.log("🧾 session.id:", session?.id, "bookingId:", bookingId);
+      const bookingId = session?.metadata?.bookingId;
+      const paymentStatus = String(session?.payment_status || "").toLowerCase();
 
       if (bookingId) {
-        await Booking.findByIdAndUpdate(
-          bookingId,
-          {
-            paymentStatus: "paid",
-            stripeCheckoutSessionId: session.id,
-            stripePaymentIntentId: session.payment_intent || undefined,
-          },
-          { new: true }
-        );
-        console.log("✅ PAID booking:", bookingId);
-      } else {
-        console.log("⚠️ session sin bookingId en metadata");
+        const booking = await Booking.findById(bookingId);
+        if (booking) {
+          if (paymentStatus === "paid") booking.paymentStatus = "paid";
+          booking.stripeCheckoutSessionId = session.id;
+          booking.updatedAt = new Date();
+          await booking.save();
+        }
       }
     }
 
-    return res.json({ received: true });
-  } catch (err) {
-    console.error("❌ webhook handler error:", err);
-    return res.status(500).send("Webhook handler failed");
+    // Responder 200 SIEMPRE si lo procesaste
+    return res.json({ received: true, type: event.type });
+  } catch (e) {
+    return res.status(500).send(`Webhook error: ${String(e?.message || e)}`);
   }
-}
-
-// ✅ acepta ambos paths: /api/webhooks/stripe  y /api/webhooks/stripe/stripe
-router.post("/", handler);
-router.post("/stripe", handler);
+});
 
 export default router;

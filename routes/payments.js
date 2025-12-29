@@ -1,3 +1,5 @@
+// routes/payments.js (ESM)
+
 import express from "express";
 import Stripe from "stripe";
 import Booking from "../models/Booking.js";
@@ -24,22 +26,29 @@ function bookingAmountUsd(b) {
   return 10;
 }
 
+// ===== POST /api/payments/checkout =====
 router.post("/checkout", async (req, res) => {
   try {
     const { bookingId } = req.body || {};
-    if (!bookingId) return res.status(400).json({ ok: false, error: "bookingId requerido" });
+    if (!bookingId) {
+      return res.status(400).json({ ok: false, error: "bookingId requerido" });
+    }
 
     const booking = await Booking.findById(bookingId);
-    if (!booking) return res.status(404).json({ ok: false, error: "booking no encontrada" });
+    if (!booking) {
+      return res.status(404).json({ ok: false, error: "booking no encontrada" });
+    }
 
     const stripe = getStripe();
     const amountUsd = bookingAmountUsd(booking);
     const amountCents = Math.round(amountUsd * 100);
 
+    const baseUrl = process.env.PUBLIC_BASE_URL || "http://localhost:4020";
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      success_url: "https://example.com/success",
-      cancel_url: "https://example.com/cancel",
+      success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/payment/cancel`,
       line_items: [
         {
           quantity: 1,
@@ -48,7 +57,9 @@ router.post("/checkout", async (req, res) => {
             unit_amount: amountCents,
             product_data: {
               name: booking.guideName || "IGUIDEU Booking",
-              description: `${booking.city || ""}${booking.country ? " · " + booking.country : ""}`.trim(),
+              description: `${booking.city || ""}${
+                booking.country ? " · " + booking.country : ""
+              }`.trim(),
             },
           },
         },
@@ -59,12 +70,21 @@ router.post("/checkout", async (req, res) => {
     booking.stripeCheckoutSessionId = session.id;
     await booking.save();
 
-    return res.json({ ok: true, url: session.url, sessionId: session.id });
+    return res.json({
+      ok: true,
+      url: session.url,
+      sessionId: session.id,
+    });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: "error creando checkout", details: String(e?.message || e) });
+    return res.status(500).json({
+      ok: false,
+      error: "error creando checkout",
+      details: String(e?.message || e),
+    });
   }
 });
 
+// ===== GET /api/payments/sync/:sessionId =====
 router.get("/sync/:sessionId", async (req, res) => {
   try {
     const { sessionId } = req.params;
@@ -83,11 +103,19 @@ router.get("/sync/:sessionId", async (req, res) => {
       }
     }
 
-    return res.json({ ok: true, sessionId: session.id, payment_status: session.payment_status, bookingId: bookingId || null });
+    return res.json({
+      ok: true,
+      sessionId: session.id,
+      payment_status: session.payment_status,
+      bookingId: bookingId || null,
+    });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: "error sync", details: String(e?.message || e) });
+    return res.status(500).json({
+      ok: false,
+      error: "error sync",
+      details: String(e?.message || e),
+    });
   }
 });
 
 export default router;
-
