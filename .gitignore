@@ -62,3 +62,11 @@ debug-*.cjs
 # RENDER / DEPLOY
 # ===============================
 .render/
+
+# --- secrets ---
+.env
+*whsec*
+stripe_*.txt
+*.log
+server-run.txt
+server-log.txt
