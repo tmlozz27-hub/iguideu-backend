@@ -1,22 +1,24 @@
 {
   "name": "iguideu-backend",
   "version": "1.0.0",
+  "private": true,
+  "description": "I GUIDE U Backend (Node/Express)",
   "type": "module",
-  "main": "server.js",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "express-rate-limit": "^8.2.1",
-    "helmet": "^7.2.0",
-    "jsonwebtoken": "^9.0.3",
-    "mongoose": "^8.6.3",
-    "socket.io": "^4.8.1",
-    "stripe": "^16.7.0",
-    "zod": "^4.2.1"
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.8.0",
+    "mongoose": "^8.5.2",
+    "stripe": "^16.2.0"
   }
 }
