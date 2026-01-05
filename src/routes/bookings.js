@@ -1,71 +1,74 @@
-// src/routes/bookings.js
-import express from "express";
+import { Router } from "express";
 import Booking from "../models/Booking.js";
 
-const router = express.Router();
+const router = Router();
 
-// Crea una booking en estado "pending"
-router.post("/create", async (req, res) => {
+// health simple
+router.get("/health", (req, res) =>
+  res.json({ ok: true, service: "bookings", ts: Date.now() })
+);
+
+// GET /api/bookings?email=...
+router.get("/", async (req, res) => {
   try {
-    const {
-      guideId,
-      guideName,
-      travelerName,
-      travelerEmail,
-      date,
-      hours,
-      amount,
-      currency,
-    } = req.body;
+    const email = (req.query.email || "").toString().trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: "Missing email" });
 
-    if (
-      !guideId ||
-      !guideName ||
-      !travelerName ||
-      !travelerEmail ||
-      !date ||
-      !hours ||
-      !amount
-    ) {
-      return res.status(400).json({
-        ok: false,
-        error: "Faltan datos obligatorios para crear la reserva.",
-      });
-    }
+    const list = await Booking.find({ travelerEmail: email })
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const booking = await Booking.create({
-      guideId,
-      guideName,
-      travelerName,
-      travelerEmail,
-      date,
-      hours,
-      amount,
-      currency: currency || "usd",
-      originalAmount: amount,
-    });
-
-    return res.json({ ok: true, booking });
-  } catch (err) {
-    console.error("❌ Error creando booking:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "Error creando reserva.",
-    });
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: "bookings_list_failed", message: e?.message || String(e) });
   }
 });
 
-// Obtener una booking por id
-router.get("/:id", async (req, res) => {
+// POST /api/bookings
+// Acepta formatos:
+// A) { travelerEmail, travelerName?, guideId, guideName, city?, country?, type?, hoursRequested?, totalUsd? }
+// B) { userEmail, userName?, guideId, guideName?, city?, country?, kind?, hours?, totalUsd? }  (ALIAS)
+router.post("/", async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id).lean();
-    if (!booking) {
-      return res.status(404).json({ ok: false, error: "Reserva no encontrada." });
-    }
-    return res.json({ ok: true, booking });
-  } catch (err) {
-    console.error("❌ Error obteniendo booking:", err);
-    return res.status(500).json({ ok: false, error: "Error interno." });
+    const body = req.body || {};
+
+    const travelerEmailRaw =
+      body.travelerEmail ?? body.userEmail ?? body.email ?? "";
+    const travelerEmail = travelerEmailRaw.toString().trim().toLowerCase();
+
+    const travelerName = (body.travelerName || body.userName || "Traveler").toString();
+
+    const guideId = (body.guideId || "").toString().trim();
+
+    // si no viene guideName, NO tiramos 400
+    const guideName = (body.guideName || body.name || "Unknown Guide").toString().trim();
+
+    const city = (body.city || "").toString();
+    const country = (body.country || "").toString();
+
+    if (!travelerEmail) return res.status(400).json({ error: "Missing travelerEmail (or userEmail)" });
+    if (!guideId) return res.status(400).json({ error: "Missing guideId" });
+
+    const type = (body.type ?? body.kind ?? "hour").toString();
+    const hoursRequested = Number(body.hoursRequested ?? body.hours ?? 2);
+    const totalUsd = Number(body.totalUsd ?? 0);
+
+    const created = await Booking.create({
+      travelerEmail,
+      travelerName,
+      guideId,
+      guideName,
+      city,
+      country,
+      type,
+      hoursRequested,
+      totalUsd,
+      status: "created",
+    });
+
+    res.status(201).json(created);
+  } catch (e) {
+    res.status(500).json({ error: "booking_create_failed", message: e?.message || String(e) });
   }
 });
 

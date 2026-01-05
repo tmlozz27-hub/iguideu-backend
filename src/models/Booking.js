@@ -1,37 +1,26 @@
-// src/models/Booking.js
 import mongoose from "mongoose";
 
 const BookingSchema = new mongoose.Schema(
   {
-    guideId: { type: String, required: true }, // id o code del guía
-    guideName: { type: String, required: true },
+    travelerEmail: { type: String, required: true, lowercase: true, trim: true },
+    travelerName: { type: String, default: "Traveler" },
 
-    travelerName: { type: String, required: true },
-    travelerEmail: { type: String, required: true },
+    guideId: { type: String, required: true, trim: true },
+    guideName: { type: String, required: true, trim: true },
+    city: { type: String, default: "" },
+    country: { type: String, default: "" },
 
-    date: { type: String, required: true }, // ISO string (YYYY-MM-DD)
-    hours: { type: Number, required: true, min: 1 },
+    // tipo de reserva
+    type: { type: String, enum: ["hour", "day", "24h"], default: "hour" },
+    hoursRequested: { type: Number, default: 2 },
 
-    amount: { type: Number, required: true }, // en USD
-    currency: { type: String, default: "usd" },
+    // USD calculado
+    totalUsd: { type: Number, default: 0 },
 
-    status: {
-      type: String,
-      enum: ["pending", "paid", "cancelled", "refunded"],
-      default: "pending",
-    },
-
-    stripeSessionId: { type: String }, // para vincular con Stripe después
-
-    // Preparado para reembolsos / descuentos
-    originalAmount: { type: Number },
-    discountAmount: { type: Number },
-    refundAmount: { type: Number },
+    // estado simple por ahora
+    status: { type: String, enum: ["created", "paid", "cancelled"], default: "created" },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-const Booking = mongoose.model("Booking", BookingSchema);
-export default Booking;
+export default mongoose.models.Booking || mongoose.model("Booking", BookingSchema);
