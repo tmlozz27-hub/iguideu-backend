@@ -1,0 +1,262 @@
+{
+  "mode": "DELETE",
+  "totalBookings": 64,
+  "safeTrashCount": 47,
+  "dupGroups": 8,
+  "keep": [
+    {
+      "key": "|6938b8b74d69123a8ead2e1c||PROMO_12H||0|",
+      "keepId": "6938b9faa8b0148af6be4346",
+      "createdAt": "2025-12-10T00:08:26.933Z"
+    },
+    {
+      "key": "|6938b8b74d69123a8ead2e1c||HOURS||0|",
+      "keepId": "6938bcfba8b0148af6be4350",
+      "createdAt": "2025-12-10T00:21:15.062Z"
+    },
+    {
+      "key": "|693c3b376205fbbf80a36121||FULL_DAY_8||0|",
+      "keepId": "693ddaed48aac86a043b1f21",
+      "createdAt": "2025-12-13T21:30:21.389Z"
+    },
+    {
+      "key": "|693c3b376205fbbf80a36121|bangkok|FULL_DAY_8||0|",
+      "keepId": "693de54a6c0a3be7f9d67c10",
+      "createdAt": "2025-12-13T22:14:34.311Z"
+    },
+    {
+      "key": "|693df0096b3f367be89a46ef|buenos aires|FULL_DAY_8||0|",
+      "keepId": "693df176583a98377563e036",
+      "createdAt": "2025-12-13T23:06:30.694Z"
+    },
+    {
+      "key": "|693df0096b3f367be89a46ed|bangkok|FULL_DAY_8||0|",
+      "keepId": "693df7d71c2f7250b7ede72f",
+      "createdAt": "2025-12-13T23:33:44.003Z"
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "keepId": "69408ec7a4b1b1e124a9398f",
+      "createdAt": "2025-12-15T22:42:15.570Z"
+    },
+    {
+      "key": "|TEST|bangkok|HOURS||0|",
+      "keepId": "6940ca7719fb81190b7184a4",
+      "createdAt": "2025-12-16T02:56:55.923Z"
+    }
+  ],
+  "toDeleteCount": 30,
+  "toDelete": [
+    {
+      "key": "|6938b8b74d69123a8ead2e1c||PROMO_12H||0|",
+      "_id": "6938ba6aa8b0148af6be434c",
+      "createdAt": "2025-12-10T00:10:18.626Z",
+      "guideName": "",
+      "status": ""
+    },
+    {
+      "key": "|6938b8b74d69123a8ead2e1c||HOURS||0|",
+      "_id": "6938cdf123ab0da5ade3860a",
+      "createdAt": "2025-12-10T01:33:37.449Z",
+      "guideName": "",
+      "status": ""
+    },
+    {
+      "key": "|6938b8b74d69123a8ead2e1c||HOURS||0|",
+      "_id": "6938cf1323ab0da5ade3860e",
+      "createdAt": "2025-12-10T01:38:27.190Z",
+      "guideName": "",
+      "status": ""
+    },
+    {
+      "key": "|693c3b376205fbbf80a36121||FULL_DAY_8||0|",
+      "_id": "693dddc8cfdb30391dee18bb",
+      "createdAt": "2025-12-13T21:42:32.318Z",
+      "guideName": "",
+      "status": ""
+    },
+    {
+      "key": "|693c3b376205fbbf80a36121||FULL_DAY_8||0|",
+      "_id": "693de228cfdb30391dee18c2",
+      "createdAt": "2025-12-13T22:01:12.476Z",
+      "guideName": "",
+      "status": ""
+    },
+    {
+      "key": "|693c3b376205fbbf80a36121|bangkok|FULL_DAY_8||0|",
+      "_id": "693de7a050a8b02bc52723f1",
+      "createdAt": "2025-12-13T22:24:32.561Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693c3b376205fbbf80a36121|bangkok|FULL_DAY_8||0|",
+      "_id": "693de7a450a8b02bc52723f3",
+      "createdAt": "2025-12-13T22:24:36.790Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693c3b376205fbbf80a36121|bangkok|FULL_DAY_8||0|",
+      "_id": "693de8f850a8b02bc52723f7",
+      "createdAt": "2025-12-13T22:30:16.233Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693c3b376205fbbf80a36121|bangkok|FULL_DAY_8||0|",
+      "_id": "693de8fc50a8b02bc52723f9",
+      "createdAt": "2025-12-13T22:30:20.387Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693df0096b3f367be89a46ef|buenos aires|FULL_DAY_8||0|",
+      "_id": "693dfbaa04fe83dffbcf324e",
+      "createdAt": "2025-12-13T23:50:02.381Z",
+      "guideName": "Sofia – Experta en Buenos Aires",
+      "status": ""
+    },
+    {
+      "key": "|693df0096b3f367be89a46ed|bangkok|FULL_DAY_8||0|",
+      "_id": "693dfbd504fe83dffbcf3254",
+      "createdAt": "2025-12-13T23:50:45.711Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693df0096b3f367be89a46ed|bangkok|FULL_DAY_8||0|",
+      "_id": "693e005a27330a4103741499",
+      "createdAt": "2025-12-14T00:10:02.221Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693df0096b3f367be89a46ed|bangkok|FULL_DAY_8||0|",
+      "_id": "693e012827330a41037414a0",
+      "createdAt": "2025-12-14T00:13:28.677Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693df0096b3f367be89a46ed|bangkok|FULL_DAY_8||0|",
+      "_id": "693e042827330a41037414a8",
+      "createdAt": "2025-12-14T00:26:16.824Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693df0096b3f367be89a46ed|bangkok|FULL_DAY_8||0|",
+      "_id": "693ed8b04240e55112400943",
+      "createdAt": "2025-12-14T15:33:04.074Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693df0096b3f367be89a46ed|bangkok|FULL_DAY_8||0|",
+      "_id": "693edcdf9e8f460f331e7d56",
+      "createdAt": "2025-12-14T15:50:55.300Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693df0096b3f367be89a46ed|bangkok|FULL_DAY_8||0|",
+      "_id": "693edfc19e8f460f331e7d60",
+      "createdAt": "2025-12-14T16:03:13.889Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|693df0096b3f367be89a46ed|bangkok|FULL_DAY_8||0|",
+      "_id": "693edff89e8f460f331e7d68",
+      "createdAt": "2025-12-14T16:04:08.026Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "694095a3a42ce3fbc94d2758",
+      "createdAt": "2025-12-15T23:11:31.266Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "694095b0a42ce3fbc94d275a",
+      "createdAt": "2025-12-15T23:11:44.750Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "69409696a42ce3fbc94d275c",
+      "createdAt": "2025-12-15T23:15:34.409Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "6940982fa42ce3fbc94d275f",
+      "createdAt": "2025-12-15T23:22:23.492Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "694099caa42ce3fbc94d2763",
+      "createdAt": "2025-12-15T23:29:14.154Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "69409c20a42ce3fbc94d2767",
+      "createdAt": "2025-12-15T23:39:12.120Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "69409d01a42ce3fbc94d276a",
+      "createdAt": "2025-12-15T23:42:57.587Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "69409fa6a42ce3fbc94d276f",
+      "createdAt": "2025-12-15T23:54:14.658Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "6940a3e4a42ce3fbc94d2775",
+      "createdAt": "2025-12-16T00:12:20.665Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "6940a55aa42ce3fbc94d2779",
+      "createdAt": "2025-12-16T00:18:34.957Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|arun-bangkok|bangkok|HOURS||0|",
+      "_id": "6940a8baa42ce3fbc94d277c",
+      "createdAt": "2025-12-16T00:32:58.828Z",
+      "guideName": "Arun – Bangkok Local Guide",
+      "status": ""
+    },
+    {
+      "key": "|TEST|bangkok|HOURS||0|",
+      "_id": "6940d1fd04047c44716d2240",
+      "createdAt": "2025-12-16T03:29:01.315Z",
+      "guideName": "Arun - Bangkok Local Guide",
+      "status": ""
+    }
+  ],
+  "generatedAt": "2026-01-20T15:01:49.858Z"
+}

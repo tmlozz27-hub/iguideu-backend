@@ -1,0 +1,22 @@
+﻿$Host.UI.RawUI.WindowTitle = "SERVER – iguideu23"
+cd "C:\Users\Tom\Desktop\backend-iguideu-24"
+
+# matar TODO lo que use 4020
+$lines = netstat -ano | Select-String ":4020\s"
+foreach ($l in $lines) {
+  $pid = ($l.ToString() -split "\s+")[-1]
+  if ($pid -match "^\d+$") { taskkill /PID $pid /F 2>$null }
+}
+Start-Sleep -Seconds 1
+
+# confirmar libre
+netstat -ano | findstr ":4020"
+
+# levantar
+$env:PORT="4020"
+Start-Process -FilePath "node" -ArgumentList ".\src\server.js" -WorkingDirectory (Get-Location).Path -WindowStyle Normal
+
+Start-Sleep -Seconds 1
+
+# mostrar PID que quedó escuchando
+netstat -ano | findstr ":4020"

@@ -1,0 +1,18 @@
+[
+  {
+    "_id": "695da407581d2dd56f453990",
+    "travelerEmail": "test+frontend@iguideu.com",
+    "travelerName": "Test Frontend",
+    "guideId": "695d8e5ee3caebc1c6c55656",
+    "guideName": "María López",
+    "city": "Buenos Aires",
+    "country": "Argentina",
+    "type": "hour",
+    "hoursRequested": 2,
+    "totalUsd": 70,
+    "status": "paid",
+    "createdAt": "2026-01-07T00:08:39.682Z",
+    "updatedAt": "2026-01-07T00:11:51.102Z",
+    "__v": 0
+  }
+]

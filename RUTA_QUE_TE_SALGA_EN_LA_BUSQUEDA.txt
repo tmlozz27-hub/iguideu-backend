@@ -1,0 +1,53 @@
+// CREATE BOOKING (robusto): el frontend manda lo mínimo y el backend completa lo demás
+// Body esperado: { travelerEmail, guideId, type?, hoursRequested? }
+
+import Booking from "../models/Booking.js";
+import Guide from "../models/Guide.js";
+
+export async function createBooking(req, res) {
+  try {
+    const { travelerEmail, guideId, type, hoursRequested } = req.body || {};
+
+    if (!travelerEmail || !guideId) {
+      return res.status(400).json({ ok: false, error: "travelerEmail and guideId are required" });
+    }
+
+    // 1) buscar guía real (evita datos falsos desde frontend)
+    const guide = await Guide.findById(guideId);
+    if (!guide) {
+      return res.status(404).json({ ok: false, error: "Guide not found" });
+    }
+
+    const safeType = ["hour", "day", "24h"].includes(type) ? type : "hour";
+    const safeHours = Number.isFinite(Number(hoursRequested)) ? Math.max(1, Number(hoursRequested)) : 2;
+
+    // 2) calcular totalUsd (simple)
+    const pricePerHour = Number(guide.pricePerHour || 0);
+    let totalUsd = 0;
+
+    if (safeType === "hour") totalUsd = pricePerHour * safeHours;
+    if (safeType === "day") totalUsd = Number(guide.pricePerDay || guide.dailyRate || 0);
+    if (safeType === "24h") totalUsd = Number(guide.pricePer24h || 0);
+
+    const booking = await Booking.create({
+      travelerEmail,
+      travelerName: "Traveler",
+
+      guideId: String(guide._id),
+      guideName: guide.name || "Guide",
+      city: guide.city || "",
+      country: guide.country || "",
+
+      type: safeType,
+      hoursRequested: safeHours,
+      totalUsd,
+
+      status: "created",
+    });
+
+    return res.status(201).json({ ok: true, booking });
+  } catch (e) {
+    console.error("[BOOKING_CREATE_ERROR]", e?.message || e);
+    return res.status(500).json({ ok: false, error: e?.message || "Server error" });
+  }
+}

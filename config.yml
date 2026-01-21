@@ -1,0 +1,5 @@
+﻿tunnel: iguideu23
+credentials-file: C:\Users\Tom\.cloudflared\e2c12862-b5cd-4ffc-8331-41f0894ea445.json
+
+ingress:
+  - service: http://localhost:4020

@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: backend-iguideu-24
+    env: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run start
+    autoDeploy: true
+    healthCheckPath: /api/health

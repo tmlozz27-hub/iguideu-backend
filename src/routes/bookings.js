@@ -1,74 +1,69 @@
-import { Router } from "express";
+﻿import express from "express";
 import Booking from "../models/Booking.js";
+import Guide from "../models/Guide.js";
 
-const router = Router();
+const router = express.Router();
 
-// health simple
-router.get("/health", (req, res) =>
-  res.json({ ok: true, service: "bookings", ts: Date.now() })
-);
-
-// GET /api/bookings?email=...
-router.get("/", async (req, res) => {
+/**
+ * GET /api/bookings?email=...
+ * Devuelve reservas del usuario
+ * BLINDADO:
+ * - nombre del guía SIEMPRE viene desde Guides (UTF-8 correcto)
+ * - ordenadas por createdAt desc
+ */
+router.get("/api/bookings", async (req, res) => {
   try {
-    const email = (req.query.email || "").toString().trim().toLowerCase();
-    if (!email) return res.status(400).json({ error: "Missing email" });
+    const { email } = req.query;
 
-    const list = await Booking.find({ travelerEmail: email })
+    if (!email) {
+      return res.status(400).json({ error: "email required" });
+    }
+
+    // Traemos bookings
+    const bookings = await Booking.find({ email })
       .sort({ createdAt: -1 })
       .lean();
 
-    res.json(list);
-  } catch (e) {
-    res.status(500).json({ error: "bookings_list_failed", message: e?.message || String(e) });
-  }
-});
+    if (!bookings.length) {
+      return res.json([]);
+    }
 
-// POST /api/bookings
-// Acepta formatos:
-// A) { travelerEmail, travelerName?, guideId, guideName, city?, country?, type?, hoursRequested?, totalUsd? }
-// B) { userEmail, userName?, guideId, guideName?, city?, country?, kind?, hours?, totalUsd? }  (ALIAS)
-router.post("/", async (req, res) => {
-  try {
-    const body = req.body || {};
+    // Recolectar IDs de guías usados
+    const guideIds = [
+      ...new Set(
+        bookings
+          .map(b => b.guide || b.guideId || b.guide_id)
+          .filter(Boolean)
+          .map(id => id.toString())
+      )
+    ];
 
-    const travelerEmailRaw =
-      body.travelerEmail ?? body.userEmail ?? body.email ?? "";
-    const travelerEmail = travelerEmailRaw.toString().trim().toLowerCase();
+    // Traer guías reales
+    const guides = await Guide.find({ _id: { $in: guideIds } }).lean();
+    const guideMap = new Map(guides.map(g => [g._id.toString(), g]));
 
-    const travelerName = (body.travelerName || body.userName || "Traveler").toString();
+    // Normalizar salida
+    const out = bookings.map(b => {
+      const gid =
+        (b.guide && b.guide.toString()) ||
+        (b.guideId && b.guideId.toString()) ||
+        (b.guide_id && b.guide_id.toString());
 
-    const guideId = (body.guideId || "").toString().trim();
+      const g = gid ? guideMap.get(gid) : null;
 
-    // si no viene guideName, NO tiramos 400
-    const guideName = (body.guideName || body.name || "Unknown Guide").toString().trim();
-
-    const city = (body.city || "").toString();
-    const country = (body.country || "").toString();
-
-    if (!travelerEmail) return res.status(400).json({ error: "Missing travelerEmail (or userEmail)" });
-    if (!guideId) return res.status(400).json({ error: "Missing guideId" });
-
-    const type = (body.type ?? body.kind ?? "hour").toString();
-    const hoursRequested = Number(body.hoursRequested ?? body.hours ?? 2);
-    const totalUsd = Number(body.totalUsd ?? 0);
-
-    const created = await Booking.create({
-      travelerEmail,
-      travelerName,
-      guideId,
-      guideName,
-      city,
-      country,
-      type,
-      hoursRequested,
-      totalUsd,
-      status: "created",
+      return {
+        ...b,
+        guideName: g?.name || b.guideName || b.guideTitle || "",
+        guideLocation: g?.location || b.location || "",
+        guideLanguages: g?.languages || b.languages || [],
+        guideRating: g?.rating ?? b.rating ?? null,
+      };
     });
 
-    res.status(201).json(created);
-  } catch (e) {
-    res.status(500).json({ error: "booking_create_failed", message: e?.message || String(e) });
+    res.json(out);
+  } catch (err) {
+    console.error("BOOKINGS ERROR:", err);
+    res.status(500).json({ error: "internal error" });
   }
 });
 

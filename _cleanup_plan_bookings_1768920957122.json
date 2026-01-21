@@ -1,0 +1,205 @@
+{
+  "mode": "DELETE",
+  "totalBookings": 92,
+  "safeTrashCount": 34,
+  "dupGroups": 5,
+  "keep": [
+    {
+      "key": "|695d8e5ee3caebc1c6c55656|buenos aires|||0|CREATED",
+      "keepId": "695dad72ec4905a85b4fbc54",
+      "createdAt": "2026-01-07T00:48:50.173Z"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55657||||0|CREATED",
+      "keepId": "695d93133b19b45e37641c4b",
+      "createdAt": "2026-01-06T22:56:19.542Z"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55658||||0|CREATED",
+      "keepId": "695e945da673e4d103a50182",
+      "createdAt": "2026-01-07T17:14:05.976Z"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "keepId": "695d2bd580c61fdb3c903411",
+      "createdAt": "2026-01-06T15:35:49.795Z"
+    },
+    {
+      "key": "|demo_guide_2||||0|CREATED",
+      "keepId": "695d2be080c61fdb3c903413",
+      "createdAt": "2026-01-06T15:36:00.582Z"
+    }
+  ],
+  "toDeleteCount": 28,
+  "toDelete": [
+    {
+      "key": "|695d8e5ee3caebc1c6c55656|buenos aires|||0|CREATED",
+      "_id": "695daee00d210655c57957dd",
+      "createdAt": "2026-01-07T00:54:56.552Z",
+      "guideName": "María López"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55656|buenos aires|||0|CREATED",
+      "_id": "695dba26838b976a8fd2c164",
+      "createdAt": "2026-01-07T01:43:02.010Z",
+      "guideName": "María López"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55656|buenos aires|||0|CREATED",
+      "_id": "696e3edb486e8be1e280b0f9",
+      "createdAt": "2026-01-19T14:25:31.054Z",
+      "guideName": "Mar�a L�pez"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55656|buenos aires|||0|CREATED",
+      "_id": "696e792f74e0c05390399bf6",
+      "createdAt": "2026-01-19T18:34:23.320Z",
+      "guideName": "María López"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55657||||0|CREATED",
+      "_id": "695e75b1a673e4d103a50177",
+      "createdAt": "2026-01-07T15:03:13.702Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55657||||0|CREATED",
+      "_id": "695e932ca673e4d103a5017b",
+      "createdAt": "2026-01-07T17:09:00.619Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55657||||0|CREATED",
+      "_id": "695e9337a673e4d103a5017e",
+      "createdAt": "2026-01-07T17:09:11.748Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55658||||0|CREATED",
+      "_id": "695ea9d6a673e4d103a50186",
+      "createdAt": "2026-01-07T18:45:42.742Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|695d8e5ee3caebc1c6c55658||||0|CREATED",
+      "_id": "695ead18a673e4d103a5018a",
+      "createdAt": "2026-01-07T18:59:36.100Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d2bfa80c61fdb3c903417",
+      "createdAt": "2026-01-06T15:36:26.535Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d2f7380c61fdb3c903419",
+      "createdAt": "2026-01-06T15:51:15.101Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d2f8180c61fdb3c90341b",
+      "createdAt": "2026-01-06T15:51:29.423Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d2f8c80c61fdb3c90341d",
+      "createdAt": "2026-01-06T15:51:40.295Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d33bc80c61fdb3c90341f",
+      "createdAt": "2026-01-06T16:09:32.290Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d352bfaeee6dc343a9ab9",
+      "createdAt": "2026-01-06T16:15:39.815Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d3618faeee6dc343a9abf",
+      "createdAt": "2026-01-06T16:19:36.085Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d37fae580bb990a32a6e3",
+      "createdAt": "2026-01-06T16:27:38.480Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d39cee580bb990a32a6e7",
+      "createdAt": "2026-01-06T16:35:26.792Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d39eae580bb990a32a6eb",
+      "createdAt": "2026-01-06T16:35:54.761Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_1||||0|CREATED",
+      "_id": "695d4a28a673e4d103a50174",
+      "createdAt": "2026-01-06T17:45:12.695Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_2||||0|CREATED",
+      "_id": "695d2bec80c61fdb3c903415",
+      "createdAt": "2026-01-06T15:36:12.679Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_2||||0|CREATED",
+      "_id": "695d33c480c61fdb3c903421",
+      "createdAt": "2026-01-06T16:09:40.244Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_2||||0|CREATED",
+      "_id": "695d33d180c61fdb3c903423",
+      "createdAt": "2026-01-06T16:09:53.145Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_2||||0|CREATED",
+      "_id": "695d353afaeee6dc343a9abb",
+      "createdAt": "2026-01-06T16:15:54.389Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_2||||0|CREATED",
+      "_id": "695d3545faeee6dc343a9abd",
+      "createdAt": "2026-01-06T16:16:05.009Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_2||||0|CREATED",
+      "_id": "695d362bfaeee6dc343a9ac1",
+      "createdAt": "2026-01-06T16:19:55.161Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_2||||0|CREATED",
+      "_id": "695d3812e580bb990a32a6e5",
+      "createdAt": "2026-01-06T16:28:02.617Z",
+      "guideName": "Unknown Guide"
+    },
+    {
+      "key": "|demo_guide_2||||0|CREATED",
+      "_id": "695d39d4e580bb990a32a6e9",
+      "createdAt": "2026-01-06T16:35:32.965Z",
+      "guideName": "Unknown Guide"
+    }
+  ],
+  "generatedAt": "2026-01-20T14:55:57.121Z"
+}
