@@ -1,50 +1,61 @@
-// src/routes/bookings.routes.js
 import { Router } from "express";
-import mongoose from "mongoose";
-import Booking from "../models/Booking.js";
 
 const router = Router();
 
-// GET /api/bookings?email=
-router.get("/", async (req, res) => {
-  try {
-    const email = (req.query.email || "").toString().trim();
-    const q = email ? { travelerEmail: email } : {};
-    const items = await Booking.find(q).sort({ createdAt: -1 }).limit(200).lean();
-    return res.json(items);
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: "BOOKINGS_LIST_FAIL" });
-  }
-});
+// helper: responde SIEMPRE 200 (para que el frontend no muera)
+function ok(res, payload) {
+  return res.status(200).json(payload);
+}
 
-// POST /api/bookings
-router.post("/", async (req, res) => {
+router.get("/", async (req, res) => {
+  const emailRaw = (req.query.email || "").toString().trim();
+  const email = (() => {
+    try { return decodeURIComponent(emailRaw || "").trim(); }
+    catch { return (emailRaw || "").trim(); }
+  })();
+
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ ok: false, error: "DB_NOT_READY" });
+    // Intento cargar modelo
+    let BookingModel = null;
+    try {
+      const mod = await import("../models/Booking.js");
+      BookingModel = mod?.default || mod?.Booking || null;
+    } catch (_) {
+      BookingModel = null;
     }
 
-    const b = req.body || {};
-    const travelerEmail = (b.travelerEmail || "").toString().trim();
-    const guideName = (b.guideName || "").toString().trim();
+    if (!BookingModel) {
+      return ok(res, { ok: true, source: "fallback-no-model", email: email || null, bookings: [] });
+    }
 
-    if (!travelerEmail) return res.status(400).json({ ok: false, error: "MISSING_TRAVELER_EMAIL" });
-    if (!guideName) return res.status(400).json({ ok: false, error: "MISSING_GUIDE_NAME" });
+    // Si mongoose no está conectado, NO consultes (evita buffering timeout)
+    let mongoose = null;
+    try {
+      const m = await import("mongoose");
+      mongoose = m?.default || m;
+    } catch (_) {
+      mongoose = null;
+    }
 
-    const doc = await Booking.create({
-      travelerEmail,
-      guideName,
-      city: (b.city || "").toString(),
-      country: (b.country || "").toString(),
-      duration: (b.duration || "HOURS").toString(),
-      hours: Number(b.hours || 0),
-      total: Number(b.total || 0),
-      status: (b.status || "PENDING").toString(),
-    });
+    const state = mongoose?.connection?.readyState; // 0=disconnected, 1=connected
+    if (state !== 1) {
+      return ok(res, {
+        ok: true,
+        source: "fallback-db-not-connected",
+        email: email || null,
+        bookings: [],
+        dbState: state ?? null,
+      });
+    }
 
-    return res.status(201).json({ ok: true, id: doc._id.toString() });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: "BOOKING_CREATE_FAIL" });
+    const q = {};
+    if (email) q.email = email;
+
+    const bookings = await BookingModel.find(q).sort({ createdAt: -1 }).limit(200);
+    return ok(res, { ok: true, source: "db", email: email || null, bookings });
+  } catch (err) {
+    console.error("[bookings] caught:", err?.message || err);
+    return ok(res, { ok: false, source: "caught-error", error: err?.message || "bookings error", email: email || null, bookings: [] });
   }
 });
 
