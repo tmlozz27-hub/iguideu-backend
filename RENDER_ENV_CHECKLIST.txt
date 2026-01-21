@@ -1,0 +1,15 @@
+RENDER ENV CHECKLIST (backend-iguideu-24)
+
+Required:
+- MONGO_URI = (tu Mongo Atlas URI)
+- DB_NAME = iguideu20  (o el que uses)
+
+Optional (más tarde):
+- STRIPE_SECRET_KEY
+- STRIPE_WEBHOOK_SECRET
+
+Health check:
+- /api/health debe dar 200
+- /api/__whoami debe dar 200
+- /api/guides debe dar 200
+- /api/bookings?email=test%2Bfrontend%40iguideu.com debe dar 200
