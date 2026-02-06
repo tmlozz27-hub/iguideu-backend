@@ -12,7 +12,6 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
-console.log('DEBUG MONGO_URI (oculto):', MONGO_URI.replace(/(\/\/.*:)(.*)(@)/, '$1****$3'));
 
 async function run() {
   try {
