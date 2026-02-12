@@ -2,6 +2,13 @@ import express from "express";
 import Stripe from "stripe";
 
 const router = express.Router();
+router.get("/health", (req, res) => {
+  res.json({ ok: true, payments: true });
+});
+
+router.get("/", (req, res) => {
+  res.json({ ok: true, route: "/api/payments" });
+});
 
 const stripeKey = process.env.STRIPE_SECRET_KEY || "";
 const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: "2024-06-20" }) : null;
@@ -34,3 +41,4 @@ router.post("/create-intent", async (req, res) => {
 });
 
 export default router;
+
