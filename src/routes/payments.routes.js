@@ -4,55 +4,53 @@ import Booking from "../models/Booking.js";
 
 const router = express.Router();
 
-/* ===========================
-   HEALTH
-=========================== */
-
-router.get("/health", (req, res) => {
-  res.json({ ok: true, payments: true });
-});
-
-router.get("/", (req, res) => {
-  res.json({ ok: true, route: "/api/payments" });
-});
-
-/* ===========================
-   STRIPE INIT
-=========================== */
-
 const stripeKey = process.env.STRIPE_SECRET_KEY || "";
-const stripe = stripeKey
-  ? new Stripe(stripeKey, { apiVersion: "2024-06-20" })
-  : null;
+const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: "2024-06-20" }) : null;
 
-/* ===========================
-   CREATE PAYMENT INTENT
-=========================== */
+function safeStr(v) {
+  return typeof v === "string" ? v : v == null ? "" : String(v);
+}
 
-router.post("/create-intent", async (req, res) => {
+async function markPaidByBookingId(bookingId, paymentIntentId) {
+  if (!bookingId) return { ok: false, error: "BOOKING_ID_MISSING" };
+
+  const now = new Date();
+
+  const updated = await Booking.findOneAndUpdate(
+    { _id: bookingId },
+    {
+      $set: {
+        status: "PAID",
+        paidAt: now,
+        stripePaymentIntentId: paymentIntentId || null,
+      },
+    },
+    { new: true }
+  );
+
+  if (!updated) return { ok: false, error: "BOOKING_NOT_FOUND" };
+  return { ok: true, booking: updated };
+}
+
+// health
+router.get("/health", (req, res) => res.json({ ok: true, payments: true }));
+
+// create intent (lo dejás igual, pero garantizamos metadata bookingId)
+router.post("/create-intent", express.json(), async (req, res) => {
   try {
-    if (!stripe) {
-      return res.status(500).json({ error: "STRIPE_SECRET_KEY_MISSING" });
-    }
+    if (!stripe) return res.status(500).json({ error: "STRIPE_SECRET_KEY_MISSING" });
 
     const amount = Number(req.body?.amount || 0);
     const currency = String(req.body?.currency || "usd").toLowerCase();
-    const bookingId = String(req.body?.bookingId || "");
+    const bookingId = safeStr(req.body?.bookingId);
 
-    if (!amount || amount < 50) {
-      return res.status(400).json({ error: "INVALID_AMOUNT" });
-    }
-
-    if (!bookingId) {
-      return res.status(400).json({ error: "BOOKING_ID_MISSING" });
-    }
+    if (!amount || amount < 50) return res.status(400).json({ error: "INVALID_AMOUNT" });
+    if (!bookingId) return res.status(400).json({ error: "BOOKING_ID_MISSING" });
 
     const pi = await stripe.paymentIntents.create({
       amount,
       currency,
-      metadata: {
-        bookingId,
-      },
+      metadata: { bookingId }, // <- CLAVE para el webhook / update
       automatic_payment_methods: { enabled: true },
     });
 
@@ -62,56 +60,60 @@ router.post("/create-intent", async (req, res) => {
       clientSecret: pi.client_secret,
     });
   } catch (e) {
-    return res.status(500).json({
-      error: "CREATE_INTENT_ERROR",
-      message: e?.message || e,
-    });
+    return res.status(500).json({ error: e?.message || String(e) });
   }
 });
 
-/* ===========================
-   STAGING FORCE CONFIRM
-=========================== */
-
-router.post("/confirm-test", async (req, res) => {
+/**
+ * confirm-test
+ * - NO requiere app
+ * - Confirma el PaymentIntent con tarjeta TEST (pm_card_visa)
+ * - Si succeeded -> marca booking PAID en Mongo
+ */
+router.post("/confirm-test", express.json(), async (req, res) => {
   try {
-    if (!stripe) {
-      return res.status(500).json({ ok: false, error: "STRIPE_NOT_READY" });
+    if (!stripe) return res.status(500).json({ error: "STRIPE_SECRET_KEY_MISSING" });
+
+    const paymentIntentId = safeStr(req.body?.paymentIntentId);
+    let bookingId = safeStr(req.body?.bookingId);
+
+    if (!paymentIntentId) return res.status(400).json({ error: "PAYMENT_INTENT_ID_MISSING" });
+
+    // Traemos PI
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    // si no te pasaron bookingId, lo intentamos sacar del metadata
+    if (!bookingId) bookingId = safeStr(pi?.metadata?.bookingId);
+
+    // Si ya está succeeded, marcamos igual booking PAID
+    if (pi.status === "succeeded") {
+      const r = await markPaidByBookingId(bookingId, pi.id);
+      return res.status(200).json({ ok: true, piStatus: pi.status, marked: r });
     }
 
-    const { paymentIntentId, bookingId } = req.body;
-
-    if (!paymentIntentId || !bookingId) {
-      return res.status(400).json({ ok: false, error: "MISSING_FIELDS" });
-    }
-
-    await stripe.paymentIntents.confirm(paymentIntentId, {
+    // Confirmamos con método de pago TEST
+    // (esto crea “pago” en modo test)
+    const confirmed = await stripe.paymentIntents.confirm(paymentIntentId, {
       payment_method: "pm_card_visa",
     });
 
-    const updated = await Booking.findByIdAndUpdate(
-      bookingId,
-      {
-        status: "PAID",
-        paidAt: new Date(),
-        stripePaymentIntentId: paymentIntentId,
-      },
-      { new: true }
-    );
+    // Si quedó succeeded -> update DB
+    if (confirmed.status === "succeeded") {
+      const r = await markPaidByBookingId(bookingId, confirmed.id);
+      return res.status(200).json({ ok: true, piStatus: confirmed.status, marked: r });
+    }
 
+    // Si no succeeded, devolvemos estado para debug
     return res.status(200).json({
-      ok: true,
-      booking: updated,
+      ok: false,
+      piStatus: confirmed.status,
+      message: "NOT_SUCCEEDED",
+      next_action: confirmed.next_action || null,
     });
   } catch (e) {
-    return res.status(500).json({
-      ok: false,
-      error: "CONFIRM_ERROR",
-      message: e?.message || e,
-    });
+    return res.status(500).json({ error: e?.message || String(e) });
   }
 });
 
 export default router;
-
 
