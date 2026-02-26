@@ -34,3 +34,13 @@ ngrok.exe
 # OS
 .DS_Store
 Thumbs.db
+.env
+.env.*
+node_modules/
+_backup_env_*.env
+_backup_routes_*/
+_backup_server_*.js
+cloudflared*.exe
+stripe*.exe
+__BACKUP__/
+__OLD__/
