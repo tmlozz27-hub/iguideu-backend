@@ -1,11 +1,9 @@
-﻿// src/services/mongo.js (ESM)
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 
 const cached = global.__MONGO_CACHE__ || { conn: null, promise: null };
 global.__MONGO_CACHE__ = cached;
 
 function defineModels() {
-  // GUIDE
   if (!mongoose.models.Guide) {
     const GuideSchema = new mongoose.Schema(
       {
@@ -22,20 +20,24 @@ function defineModels() {
     mongoose.model("Guide", GuideSchema);
   }
 
-  // BOOKING (mínimo)
   if (!mongoose.models.Booking) {
     const BookingSchema = new mongoose.Schema(
       {
         email: { type: String, default: "" },
         gid: { type: String, default: "" },
-        status: { type: String, default: "pending" },
+
+        status: { type: String, default: "pending" }, // pending|confirmed|cancelled
+        totalAmount: { type: Number, default: 0 }, // cents/units (usamos cents para Stripe)
+        currency: { type: String, default: "usd" },
+
+        paymentStatus: { type: String, default: "unpaid" }, // unpaid|paid
+        stripePaymentIntentId: { type: String, default: "" },
       },
       { timestamps: true }
     );
     mongoose.model("Booking", BookingSchema);
   }
 
-  // RESERVATION (mínimo)
   if (!mongoose.models.Reservation) {
     const ReservationSchema = new mongoose.Schema(
       {
@@ -48,16 +50,31 @@ function defineModels() {
     mongoose.model("Reservation", ReservationSchema);
   }
 
-  // PAYMENT (mínimo)
   if (!mongoose.models.Payment) {
     const PaymentSchema = new mongoose.Schema(
       {
         email: { type: String, default: "" },
-        amount: { type: Number, default: 0 },
-        status: { type: String, default: "created" },
+
+        bookingId: { type: mongoose.Schema.Types.ObjectId, ref: "Booking", default: null },
+
+        amount: { type: Number, default: 0 }, // cents
+        currency: { type: String, default: "usd" },
+
+        status: { type: String, default: "created" }, // created|paid|failed
+        stripePaymentIntentId: { type: String, default: "" },
+
+        platformFeePercent: { type: Number, default: 10 },
+        platformFeeAmount: { type: Number, default: 0 },
+        guideNetAmount: { type: Number, default: 0 },
+
+        lastEventId: { type: String, default: "" },
       },
       { timestamps: true }
     );
+
+    PaymentSchema.index({ stripePaymentIntentId: 1 }, { unique: false });
+    PaymentSchema.index({ bookingId: 1 }, { unique: false });
+
     mongoose.model("Payment", PaymentSchema);
   }
 
@@ -78,7 +95,6 @@ export async function connectMongo() {
   }
 
   if (cached.conn) {
-    // asegura modelos aunque ya haya conexión
     defineModels();
     console.log("MongoDB OK -> dbName=" + (cached.conn?.name || "connected"));
     return cached.conn;
@@ -101,7 +117,6 @@ export async function connectMongo() {
 }
 
 export function getModels() {
-  // garantiza que existan siempre
   return defineModels();
 }
 

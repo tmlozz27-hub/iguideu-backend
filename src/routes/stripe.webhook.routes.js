@@ -1,81 +1,74 @@
 import express from "express";
 import Stripe from "stripe";
-import Booking from "../models/Booking.js";
+import { getModels } from "../services/mongo.js";
 
 const router = express.Router();
 
-const stripeKey = process.env.STRIPE_SECRET_KEY || "";
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
+  apiVersion: "2025-08-27.basil",
+});
+
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 
-const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: "2024-06-20" }) : null;
-
-function safeStr(v) {
-  return typeof v === "string" ? v : v == null ? "" : String(v);
-}
-
-async function markPaid({ bookingId, paymentIntentId }) {
-  const now = new Date();
-
-  if (bookingId) {
-    const updated = await Booking.findOneAndUpdate(
-      { _id: bookingId },
-      {
-        $set: {
-          status: "PAID",
-          paymentStatus: "PAID",
-          paidAt: now,
-          stripePaymentIntentId: paymentIntentId || null,
-        },
-      },
-      { new: true }
-    );
-    if (updated) return { ok: true };
-  }
-
-  if (paymentIntentId) {
-    const updated = await Booking.findOneAndUpdate(
-      { stripePaymentIntentId: paymentIntentId },
-      {
-        $set: {
-          status: "PAID",
-          paymentStatus: "PAID",
-          paidAt: now,
-        },
-      },
-      { new: true }
-    );
-    if (updated) return { ok: true };
-  }
-
-  return { ok: false };
-}
-
-router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+router.post("/webhook", async (req, res) => {
   try {
-    if (!stripe) return res.status(500).send("STRIPE_SECRET_KEY_MISSING");
+    const sig = req.headers["stripe-signature"];
+    if (!sig) return res.status(400).send("webhook error: missing stripe-signature");
     if (!webhookSecret) return res.status(500).send("STRIPE_WEBHOOK_SECRET_MISSING");
 
-    const sig = req.headers["stripe-signature"];
     const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+
+    const { Booking, Payment } = getModels();
 
     if (event.type === "payment_intent.succeeded") {
       const pi = event.data.object;
 
-      const bookingId =
-        safeStr(pi?.metadata?.bookingId) ||
-        safeStr(pi?.metadata?.booking_id) ||
-        "";
+      const paymentIntentId = pi.id || "";
+      const amount = Number(pi.amount_received ?? pi.amount ?? 0);
+      const currency = (pi.currency || "usd").toLowerCase();
 
-      const paymentIntentId = safeStr(pi?.id);
+      const platformFeePercent = 10;
+      const platformFeeAmount = Math.round((amount * platformFeePercent) / 100);
+      const guideNetAmount = Math.max(0, amount - platformFeeAmount);
 
-      await markPaid({ bookingId, paymentIntentId });
+      const payment = await Payment.findOneAndUpdate(
+        { stripePaymentIntentId: paymentIntentId },
+        {
+          $set: {
+            status: "paid",
+            amount,
+            currency,
+            platformFeePercent,
+            platformFeeAmount,
+            guideNetAmount,
+            lastEventId: event.id,
+          },
+        },
+        { new: true }
+      );
+
+      if (payment && payment.bookingId) {
+        await Booking.findByIdAndUpdate(payment.bookingId, {
+          $set: {
+            status: "confirmed",
+            paymentStatus: "paid",
+            stripePaymentIntentId: paymentIntentId,
+          },
+        });
+      } else {
+        await Booking.updateMany(
+          { stripePaymentIntentId: paymentIntentId },
+          { $set: { status: "confirmed", paymentStatus: "paid" } }
+        );
+      }
+
+      console.log("[WEBHOOK] payment_intent.succeeded -> paid", paymentIntentId);
     }
 
-    return res.status(200).send("ok");
+    return res.status(200).json({ received: true });
   } catch (e) {
     return res.status(400).send(`webhook error: ${e?.message || e}`);
   }
 });
 
 export default router;
-
