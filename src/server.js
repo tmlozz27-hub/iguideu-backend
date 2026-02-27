@@ -1,115 +1,45 @@
 import express from "express";
 import cors from "cors";
-import mongoose from "mongoose";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import connectMongo from "./services/mongo.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import authRoutes from "./routes/auth.routes.js";
+import guidesRoutes from "./routes/guides.routes.js";
+import bookingsRoutes from "./routes/bookings.routes.js";
+import paymentsRoutes from "./routes/payments.routes.js";
+import stripeWebhookRoutes from "./routes/stripe.webhook.routes.js";
 
 const app = express();
 
-/* ======================
-   CORS
-====================== */
-app.use(cors());
+app.use(cors({ origin: "*", credentials: false }));
 
-/* ======================
-   RAW body SOLO para Stripe webhook
-====================== */
+app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
+
+const jsonParser = express.json({ limit: "2mb" });
+const urlParser = express.urlencoded({ extended: true, limit: "2mb" });
+
 app.use((req, res, next) => {
-  if (req.originalUrl === "/api/stripe/webhook") {
-    next();
-  } else {
-    express.json({ limit: "2mb" })(req, res, next);
-  }
+  if (req.originalUrl === "/api/stripe/webhook") return next();
+  jsonParser(req, res, next);
 });
 
-/* ======================
-   ENV
-====================== */
-const HOST = "0.0.0.0";
-const PORT = Number(process.env.PORT || 10000);
-
-const MONGO_URI =
-  process.env.MONGO_URI ||
-  process.env.MONGODB_URI ||
-  process.env.MONGO_URL ||
-  null;
-
-/* ======================
-   MONGO
-====================== */
-if (MONGO_URI) {
-  try {
-    await mongoose.connect(MONGO_URI, { autoIndex: false });
-    console.log("[mongo] ✅ connected. readyState=", mongoose.connection.readyState);
-  } catch (e) {
-    console.log("[mongo] ❌ connect failed:", e?.message || e);
-  }
-} else {
-  console.log("[mongo] ⚠️ no MONGO_URI");
-}
-
-/* ======================
-   HEALTH
-====================== */
-app.get("/", (_req, res) => {
-  res.status(200).send("OK");
+app.use((req, res, next) => {
+  if (req.originalUrl === "/api/stripe/webhook") return next();
+  urlParser(req, res, next);
 });
 
-app.get("/api/health", (_req, res) => {
-  res.status(200).json({
-    ok: true,
-    service: "backend-iguideu-24",
-    ts: new Date().toISOString(),
-    dbState: mongoose.connection?.readyState ?? 0,
-  });
-});
+app.get("/api/health", (req, res) => res.status(200).json({ status: "OK" }));
 
-/* ======================
-   ROUTE LOADER
-====================== */
-async function mountIfExists(prefix, relFile) {
-  const full = path.join(__dirname, relFile);
-  if (!fs.existsSync(full)) {
-    console.log("[ROUTES] missing ->", relFile);
-    return;
-  }
-  try {
-    const mod = await import(full);
-    const router = mod?.default || mod?.router || mod;
-    if (router) {
-      app.use(prefix, router);
-      console.log("[ROUTES] mounted ->", prefix, "from", relFile);
-    } else {
-      console.log("[ROUTES] invalid export ->", relFile);
-    }
-  } catch (e) {
-    console.log("[ROUTES] failed ->", relFile, e?.message || e);
-  }
-}
+app.use("/api/auth", authRoutes);
+app.use("/api/guides", guidesRoutes);
+app.use("/api/bookings", bookingsRoutes);
+app.use("/api/payments", paymentsRoutes);
+app.use("/api/stripe", stripeWebhookRoutes);
 
-/* ======================
-   ROUTES
-====================== */
-await mountIfExists("/api/auth", "./routes/auth.routes.js");
-await mountIfExists("/api/guides", "./routes/guides.routes.js");
-await mountIfExists("/api/bookings", "./routes/bookings.routes.js");
-await mountIfExists("/api/payments", "./routes/payments.routes.js");
-await mountIfExists("/api/stripe", "./routes/stripe.webhook.routes.js");
+const HOST = process.env.HOST || "0.0.0.0";
+const PORT = Number(process.env.PORT || 4020);
 
-/* ======================
-   404
-====================== */
-app.use((_req, res) => {
-  res.status(404).json({ error: "NOT_FOUND" });
-});
+await connectMongo();
 
-/* ======================
-   LISTEN
-====================== */
 app.listen(PORT, HOST, () => {
-  console.log("Server ON -> http://" + HOST + ":" + PORT);
+  console.log(`Server ON -> http://${HOST}:${PORT}`);
 });
