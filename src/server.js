@@ -12,22 +12,27 @@ const app = express();
 
 app.use(cors({ origin: "*", credentials: false }));
 
+// 🔵 RAW body SOLO para Stripe webhook
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
 
 const jsonParser = express.json({ limit: "2mb" });
 const urlParser = express.urlencoded({ extended: true, limit: "2mb" });
 
+// 🔵 Evitar que JSON parser toque el webhook
 app.use((req, res, next) => {
-  if (req.originalUrl === "/api/stripe/webhook") return next();
+  if ((req.originalUrl || "").startsWith("/api/stripe/webhook")) return next();
   jsonParser(req, res, next);
 });
 
+// 🔵 Evitar que urlencoded parser toque el webhook
 app.use((req, res, next) => {
-  if (req.originalUrl === "/api/stripe/webhook") return next();
+  if ((req.originalUrl || "").startsWith("/api/stripe/webhook")) return next();
   urlParser(req, res, next);
 });
 
-app.get("/api/health", (req, res) => res.status(200).json({ status: "OK" }));
+app.get("/api/health", (req, res) => {
+  res.status(200).json({ status: "OK" });
+});
 
 app.use("/api/auth", authRoutes);
 app.use("/api/guides", guidesRoutes);
