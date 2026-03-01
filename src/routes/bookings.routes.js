@@ -1,112 +1,137 @@
 import express from "express";
 import Booking from "../models/Booking.js";
-import Guide from "../models/Guide.js";
 
 const router = express.Router();
 
-/**
- * GET /
- * - Si mandás ?email=... devuelve bookings de ese travelerEmail
- * - Si NO mandás email, devuelve últimos 50 (debug)
- */
+function toNumber(x) {
+  if (x === null || x === undefined) return null;
+  if (typeof x === "number" && Number.isFinite(x)) return x;
+  if (typeof x === "string") {
+    const v = Number(x.replace(",", "."));
+    return Number.isFinite(v) ? v : null;
+  }
+  return null;
+}
+
 router.get("/", async (req, res) => {
   try {
-    const email = String(req.query?.email || "").trim();
-
-    if (!email) {
-      const list = await Booking.find({}).sort({ createdAt: -1 }).limit(50).lean();
-      return res.status(200).json({ ok: true, source: "db", email: null, bookings: list });
-    }
-
-    // Buscar por travelerEmail (principal) y por email (alias legacy)
-    const bookings = await Booking.find({
-      $or: [{ travelerEmail: email }, { email }],
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // Enriquecer con datos del Guide si hay guideId/guide
-    const guideIds = [
-      ...new Set(
-        bookings
-          .map((b) => b.guideId || b.guide || b.guide_id)
-          .filter(Boolean)
-          .map((id) => id.toString())
-      ),
-    ];
-
-    let guideMap = new Map();
-    if (guideIds.length) {
-      const guides = await Guide.find({ _id: { $in: guideIds } }).lean();
-      guideMap = new Map(guides.map((g) => [g._id.toString(), g]));
-    }
-
-    const out = bookings.map((b) => {
-      const gid =
-        (b.guideId && b.guideId.toString()) ||
-        (b.guide && b.guide.toString()) ||
-        (b.guide_id && b.guide_id.toString());
-
-      const g = gid ? guideMap.get(gid) : null;
-
-      return {
-        ...b,
-        guideName: g?.name || b.guideName || b.guideTitle || "",
-        guideLocation: g?.location || b.guideLocation || b.location || "",
-        guideLanguages: g?.languages || b.guideLanguages || b.languages || [],
-        guideRating: g?.rating ?? b.guideRating ?? b.rating ?? null,
-      };
-    });
-
-    return res.status(200).json({ ok: true, source: "db", email, bookings: out });
-  } catch (e) {
-    console.error("BOOKINGS_LIST_FAILED:", e);
-    return res.status(500).json({ error: "BOOKINGS_LIST_FAILED", message: e?.message || String(e) });
+    const travelerEmail = (req.query.travelerEmail || "").toString().trim();
+    const q = travelerEmail ? { travelerEmail } : {};
+    const items = await Booking.find(q).sort({ createdAt: -1 }).lean();
+    return res.status(200).json({ ok: true, items, count: items.length });
+  } catch {
+    return res.status(500).json({ ok: false, error: "BOOKINGS_GET_FAILED" });
   }
 });
 
-/**
- * POST /
- * Crea booking PENDING.
- * Acepta aliases:
- * - travelerEmail o email
- * - amount o price
- */
+router.get("/:id", async (req, res) => {
+  try {
+    const id = (req.params?.id || "").toString();
+    if (!id) return res.status(400).json({ ok: false, error: "BOOKING_ID_REQUIRED" });
+
+    const booking = await Booking.findById(id).lean();
+    if (!booking) return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" });
+
+    return res.status(200).json({ ok: true, item: booking, booking });
+  } catch {
+    return res.status(500).json({ ok: false, error: "BOOKING_GET_FAILED" });
+  }
+});
+
 router.post("/", async (req, res) => {
   try {
-    const travelerEmail = String(req.body?.travelerEmail || req.body?.email || "").trim();
-    if (!travelerEmail) {
-      return res.status(400).json({ error: "travelerEmail required" });
+    const travelerEmail = (req.body?.travelerEmail || "").toString().trim();
+    if (!travelerEmail) return res.status(400).json({ ok: false, error: "TRAVELER_EMAIL_REQUIRED" });
+
+    const guideId = (req.body?.guideId || req.body?.guideID || req.body?.guide_id || "").toString();
+    const guideName = (req.body?.guideName || req.body?.guideTitle || req.body?.guide || "").toString();
+    const city = (req.body?.city || "").toString();
+    const country = (req.body?.country || req.body?.guideCountry || "").toString();
+
+    const duration = (req.body?.duration || "HOURS").toString().toUpperCase();
+
+    const hours =
+      toNumber(req.body?.hours) ??
+      toNumber(req.body?.hoursRequested) ??
+      toNumber(req.body?.durationHours) ??
+      toNumber(req.body?.hours_requested) ??
+      0;
+
+    const rate =
+      toNumber(req.body?.rate) ??
+      toNumber(req.body?.rateUsd) ??
+      toNumber(req.body?.rateUSD) ??
+      toNumber(req.body?.ratePerHour) ??
+      toNumber(req.body?.pricePerHour) ??
+      null;
+
+    let total =
+      toNumber(req.body?.total) ??
+      toNumber(req.body?.amountUSD) ??
+      toNumber(req.body?.amountUsd) ??
+      toNumber(req.body?.totalAmount) ??
+      toNumber(req.body?.amount) ??
+      0;
+
+    if ((!total || total <= 0) && hours > 0 && rate && rate > 0) {
+      total = Math.round(hours * rate * 100) / 100;
     }
 
-    const guideName = String(req.body?.guideName || req.body?.name || "Demo Guide");
-    const guideId = String(req.body?.guideId || req.body?.guide || req.body?.guide_id || "");
-    const startDate = req.body?.startDate ? String(req.body.startDate) : undefined;
-    const durationHours = req.body?.durationHours ? Number(req.body.durationHours) : undefined;
-
-    const amount = Number(req.body?.amount ?? req.body?.price ?? 0);
-    const currency = String(req.body?.currency || "usd").toLowerCase();
+    const currency = (req.body?.currency || "USD").toString().toUpperCase();
+    const status = (req.body?.status || "PENDING").toString().toUpperCase();
 
     const doc = await Booking.create({
       travelerEmail,
-      email: travelerEmail, // alias legacy para búsquedas viejas
+      guideId,
       guideName,
-      guideId: guideId || undefined,
-      startDate,
-      durationHours,
-      amount,
+      city,
+      country,
+      duration,
+      hours,
+      total,
       currency,
-      status: "PENDING",
-      paymentStatus: "PENDING",
+      status,
+      source: (req.body?.source || "").toString(),
     });
 
-    return res.status(201).json({ ok: true, bookingId: doc._id, booking: doc });
-  } catch (e) {
-    console.error("BOOKING_CREATE_FAILED:", e);
-    return res.status(500).json({ error: "BOOKING_CREATE_FAILED", message: e?.message || String(e) });
+    const booking = doc.toObject ? doc.toObject() : doc;
+
+    return res.status(201).json({ ok: true, item: booking, booking });
+  } catch {
+    return res.status(500).json({ ok: false, error: "BOOKING_CREATE_FAILED" });
+  }
+});
+
+router.patch("/:id/mark-paid", async (req, res) => {
+  try {
+    const key = (req.headers["x-internal-key"] || "").toString();
+    const expected = (process.env.INTERNAL_WEBHOOK_KEY || "").toString();
+    if (!expected || key !== expected) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+
+    const id = (req.params?.id || "").toString();
+    if (!id) return res.status(400).json({ ok: false, error: "BOOKING_ID_REQUIRED" });
+
+    const paymentIntentId = (req.body?.paymentIntentId || "").toString();
+    const status = (req.body?.status || "PAID").toString().toUpperCase();
+
+    const updated = await Booking.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          status,
+          stripePaymentIntentId: paymentIntentId || undefined,
+          paidAt: new Date().toISOString(),
+        },
+      },
+      { new: true }
+    ).lean();
+
+    if (!updated) return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" });
+
+    return res.status(200).json({ ok: true, item: updated, booking: updated });
+  } catch {
+    return res.status(500).json({ ok: false, error: "BOOKING_MARK_PAID_FAILED" });
   }
 });
 
 export default router;
-
-

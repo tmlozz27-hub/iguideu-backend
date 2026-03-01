@@ -1,101 +1,102 @@
 import express from "express";
 import Stripe from "stripe";
-import { getModels } from "../services/mongo.js";
 
 const router = express.Router();
 
-const stripeKey = process.env.STRIPE_SECRET_KEY || "";
-const stripe = stripeKey
-  ? new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" })
-  : null;
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET || "";
+const DEFAULT_CURRENCY = (process.env.STRIPE_CURRENCY || "usd").toLowerCase();
 
-/*
-DEBUG STRIPE ACCOUNT
-*/
-router.get("/debug-stripe", async (req, res) => {
+let stripe = null;
+if (STRIPE_SECRET_KEY) stripe = new Stripe(STRIPE_SECRET_KEY);
+
+async function markBookingPaid(bookingId, paymentIntentId) {
+  if (!bookingId) return;
+
+  let Booking = null;
   try {
-    if (!stripe)
-      return res.status(500).json({ ok: false, error: "STRIPE_SECRET_KEY_MISSING" });
-
-    const acct = await stripe.accounts.retrieve();
-    return res.json({
-      ok: true,
-      stripeAccountId: acct.id,
-      email: acct.email || null,
-      country: acct.country || null,
-    });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: e?.message });
+    const mod = await import("../models/Booking.js");
+    Booking = mod.default || mod.Booking || null;
+  } catch {
+    Booking = null;
   }
+
+  if (!Booking) return;
+
+  await Booking.findByIdAndUpdate(
+    bookingId,
+    {
+      $set: {
+        status: "PAID",
+        stripePaymentIntentId: paymentIntentId || "",
+        paidAt: new Date().toISOString(),
+      },
+    },
+    { new: false }
+  );
+}
+
+router.get("/health", (req, res) => {
+  return res.status(200).json({ status: "OK" });
 });
 
-/*
-CREATE INTENT + CREATE PAYMENT RECORD
-*/
-router.post("/create-intent", async (req, res) => {
+router.post("/create-intent", express.json(), async (req, res) => {
   try {
-    if (!stripe)
-      return res.status(500).json({ ok: false, error: "STRIPE_SECRET_KEY_MISSING" });
+    if (!stripe) {
+      return res.status(500).json({ ok: false, error: "STRIPE_NOT_CONFIGURED" });
+    }
 
-    const { Booking, Payment } = getModels();
+    const bookingId = req.body?.bookingId ? String(req.body.bookingId) : "";
+    const amountMajor = req.body?.amount !== undefined && req.body?.amount !== null ? Number(req.body.amount) : null;
 
-    const amount = Number(req.body?.amount || 0);
-    const currency = String(req.body?.currency || "usd").toLowerCase();
-    const bookingId = String(req.body?.bookingId || "");
-
-    if (!amount || amount < 50)
-      return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
-
-    if (!bookingId)
+    if (!bookingId) {
       return res.status(400).json({ ok: false, error: "BOOKING_ID_REQUIRED" });
+    }
 
-    const booking = await Booking.findById(bookingId);
-    if (!booking)
-      return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" });
+    if (!amountMajor || !Number.isFinite(amountMajor) || amountMajor <= 0) {
+      return res.status(400).json({ ok: false, error: "AMOUNT_REQUIRED" });
+    }
 
-    const pi = await stripe.paymentIntents.create({
-      amount,
-      currency,
+    const amountCents = Math.round(amountMajor * 100);
+
+    const intent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: DEFAULT_CURRENCY,
       metadata: { bookingId },
       automatic_payment_methods: { enabled: true },
     });
 
-    const platformFeePercent = 10;
-    const platformFeeAmount = Math.round((amount * platformFeePercent) / 100);
-    const guideNetAmount = amount - platformFeeAmount;
-
-    const payment = await Payment.create({
-      email: booking.email,
-      bookingId: booking._id,
-      amount,
-      currency,
-      status: "created",
-      stripePaymentIntentId: pi.id,
-      platformFeePercent,
-      platformFeeAmount,
-      guideNetAmount,
-    });
-
-    await Booking.findByIdAndUpdate(booking._id, {
-      stripePaymentIntentId: pi.id,
-      totalAmount: amount,
-      currency,
-      paymentStatus: "unpaid",
-    });
-
-    return res.json({
+    return res.status(200).json({
       ok: true,
-      paymentIntentId: pi.id,
-      clientSecret: pi.client_secret,
-      paymentId: payment._id,
+      clientSecret: intent.client_secret,
+      paymentIntentId: intent.id,
+      amountCents,
+      currency: DEFAULT_CURRENCY,
     });
-  } catch (e) {
+  } catch (err) {
     return res.status(500).json({
       ok: false,
-      error: e?.message,
-      type: e?.type,
-      code: e?.code,
+      error: "CREATE_INTENT_FAILED",
+      message: err?.message || "error",
     });
+  }
+});
+
+router.post("/force-paid", express.json(), async (req, res) => {
+  try {
+    if ((process.env.NODE_ENV || "").toLowerCase() !== "development") {
+      return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+    }
+
+    const bookingId = req.body?.bookingId ? String(req.body.bookingId) : "";
+    const paymentIntentId = req.body?.paymentIntentId ? String(req.body.paymentIntentId) : "pi_dev_force_paid";
+
+    if (!bookingId) return res.status(400).json({ ok: false, error: "BOOKING_ID_REQUIRED" });
+
+    await markBookingPaid(bookingId, paymentIntentId);
+
+    return res.status(200).json({ ok: true });
+  } catch {
+    return res.status(500).json({ ok: false, error: "FORCE_PAID_FAILED" });
   }
 });
 

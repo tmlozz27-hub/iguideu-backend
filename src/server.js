@@ -12,7 +12,6 @@ const app = express();
 
 app.use(cors({ origin: "*", credentials: false }));
 
-// RAW body SOLO para Stripe webhook (firma)
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
 
 const jsonParser = express.json({ limit: "2mb" });
@@ -28,11 +27,22 @@ app.use((req, res, next) => {
   urlParser(req, res, next);
 });
 
+app.use((req, res, next) => {
+  const u = req.originalUrl || "";
+  if (u.startsWith("/api/bookings") || u.startsWith("/api/reservations")) {
+    console.log(new Date().toISOString(), req.method, u);
+  }
+  next();
+});
+
 app.get("/api/health", (req, res) => res.status(200).json({ status: "OK" }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/guides", guidesRoutes);
+
 app.use("/api/bookings", bookingsRoutes);
+app.use("/api/reservations", bookingsRoutes);
+
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/stripe", stripeWebhookRoutes);
 

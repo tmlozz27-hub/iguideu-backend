@@ -44,3 +44,7 @@ cloudflared*.exe
 stripe*.exe
 __BACKUP__/
 __OLD__/
+SAFE_ONLY.patch
+server.js.DISABLED
+*.bak2
+*.disabled
