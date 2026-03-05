@@ -1,137 +1,119 @@
-import express from "express";
-import Booking from "../models/Booking.js";
+import express from "express"
+import mongoose from "mongoose"
 
-const router = express.Router();
+const router = express.Router()
 
-function toNumber(x) {
-  if (x === null || x === undefined) return null;
-  if (typeof x === "number" && Number.isFinite(x)) return x;
-  if (typeof x === "string") {
-    const v = Number(x.replace(",", "."));
-    return Number.isFinite(v) ? v : null;
-  }
-  return null;
+const BookingSchema = new mongoose.Schema(
+  {
+    travelerName: { type: String, default: "" },
+    travelerEmail: { type: String, required: true, index: true },
+    guideId: { type: String, required: true, index: true },
+
+    date: { type: String, required: true },
+    hours: { type: Number, required: true, min: 0.25 },
+
+    currency: { type: String, default: "usd" },
+    price: { type: Number, required: true, min: 0 },
+    amountCents: { type: Number, required: true, min: 0 },
+
+    status: { type: String, default: "PENDING", index: true },
+
+    total: { type: Number, default: 0 },
+    totalAmount: { type: Number, default: 0 },
+    amount: { type: Number, default: 0 },
+
+    stripePaymentIntentId: { type: String, default: null },
+    paidAt: { type: Date, default: null }
+  },
+  { timestamps: true }
+)
+
+const Booking =
+  mongoose.models.Booking || mongoose.model("Booking", BookingSchema, "bookings")
+
+function toNumber(v, fallback = 0) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
 }
 
 router.get("/", async (req, res) => {
   try {
-    const travelerEmail = (req.query.travelerEmail || "").toString().trim();
-    const q = travelerEmail ? { travelerEmail } : {};
-    const items = await Booking.find(q).sort({ createdAt: -1 }).lean();
-    return res.status(200).json({ ok: true, items, count: items.length });
-  } catch {
-    return res.status(500).json({ ok: false, error: "BOOKINGS_GET_FAILED" });
+    const { travelerEmail, guideId, status, limit } = req.query || {}
+
+    const q = {}
+    if (travelerEmail) q.travelerEmail = String(travelerEmail)
+    if (guideId) q.guideId = String(guideId)
+    if (status) q.status = String(status)
+
+    const lim = Math.min(Math.max(toNumber(limit, 50), 1), 200)
+
+    const items = await Booking.find(q).sort({ createdAt: -1 }).limit(lim).lean()
+    return res.status(200).json(items)
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: "BOOKINGS_FETCH_FAILED", detail: err?.message || "Internal Server Error" })
   }
-});
-
-router.get("/:id", async (req, res) => {
-  try {
-    const id = (req.params?.id || "").toString();
-    if (!id) return res.status(400).json({ ok: false, error: "BOOKING_ID_REQUIRED" });
-
-    const booking = await Booking.findById(id).lean();
-    if (!booking) return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" });
-
-    return res.status(200).json({ ok: true, item: booking, booking });
-  } catch {
-    return res.status(500).json({ ok: false, error: "BOOKING_GET_FAILED" });
-  }
-});
+})
 
 router.post("/", async (req, res) => {
   try {
-    const travelerEmail = (req.body?.travelerEmail || "").toString().trim();
-    if (!travelerEmail) return res.status(400).json({ ok: false, error: "TRAVELER_EMAIL_REQUIRED" });
+    const b = req.body || {}
 
-    const guideId = (req.body?.guideId || req.body?.guideID || req.body?.guide_id || "").toString();
-    const guideName = (req.body?.guideName || req.body?.guideTitle || req.body?.guide || "").toString();
-    const city = (req.body?.city || "").toString();
-    const country = (req.body?.country || req.body?.guideCountry || "").toString();
+    const travelerName = String(b.travelerName || "")
+    const travelerEmail = String(b.travelerEmail || "").trim().toLowerCase()
 
-    const duration = (req.body?.duration || "HOURS").toString().toUpperCase();
+    const guideId = String(b.guideId || b.guide || "").trim()
+    const date = String(b.date || b.startDate || "").trim()
 
-    const hours =
-      toNumber(req.body?.hours) ??
-      toNumber(req.body?.hoursRequested) ??
-      toNumber(req.body?.durationHours) ??
-      toNumber(req.body?.hours_requested) ??
-      0;
+    const hours = toNumber(b.hours ?? b.durationHours ?? b.duration ?? 0, 0)
+    const currency = String(b.currency || "usd").trim().toLowerCase()
 
-    const rate =
-      toNumber(req.body?.rate) ??
-      toNumber(req.body?.rateUsd) ??
-      toNumber(req.body?.rateUSD) ??
-      toNumber(req.body?.ratePerHour) ??
-      toNumber(req.body?.pricePerHour) ??
-      null;
+    const price = toNumber(
+      b.price ?? b.total ?? b.totalAmount ?? b.amount ?? 0,
+      0
+    )
 
-    let total =
-      toNumber(req.body?.total) ??
-      toNumber(req.body?.amountUSD) ??
-      toNumber(req.body?.amountUsd) ??
-      toNumber(req.body?.totalAmount) ??
-      toNumber(req.body?.amount) ??
-      0;
+    if (!travelerEmail) return res.status(400).json({ ok: false, error: "travelerEmail is required" })
+    if (!guideId) return res.status(400).json({ ok: false, error: "guideId is required" })
+    if (!date) return res.status(400).json({ ok: false, error: "date is required (YYYY-MM-DD)" })
+    if (!hours || hours <= 0) return res.status(400).json({ ok: false, error: "hours must be > 0" })
+    if (price < 0) return res.status(400).json({ ok: false, error: "price must be >= 0" })
 
-    if ((!total || total <= 0) && hours > 0 && rate && rate > 0) {
-      total = Math.round(hours * rate * 100) / 100;
-    }
-
-    const currency = (req.body?.currency || "USD").toString().toUpperCase();
-    const status = (req.body?.status || "PENDING").toString().toUpperCase();
+    const amountCents = Math.round(price * 100)
 
     const doc = await Booking.create({
+      travelerName,
       travelerEmail,
       guideId,
-      guideName,
-      city,
-      country,
-      duration,
+      date,
       hours,
-      total,
       currency,
-      status,
-      source: (req.body?.source || "").toString(),
-    });
+      price,
+      amountCents,
+      total: price,
+      totalAmount: price,
+      amount: price,
+      status: "PENDING"
+    })
 
-    const booking = doc.toObject ? doc.toObject() : doc;
-
-    return res.status(201).json({ ok: true, item: booking, booking });
-  } catch {
-    return res.status(500).json({ ok: false, error: "BOOKING_CREATE_FAILED" });
+    return res.status(201).json(doc)
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: "BOOKING_CREATE_FAILED",
+      detail: err?.message || "Internal Server Error"
+    })
   }
-});
+})
 
-router.patch("/:id/mark-paid", async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
-    const key = (req.headers["x-internal-key"] || "").toString();
-    const expected = (process.env.INTERNAL_WEBHOOK_KEY || "").toString();
-    if (!expected || key !== expected) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
-
-    const id = (req.params?.id || "").toString();
-    if (!id) return res.status(400).json({ ok: false, error: "BOOKING_ID_REQUIRED" });
-
-    const paymentIntentId = (req.body?.paymentIntentId || "").toString();
-    const status = (req.body?.status || "PAID").toString().toUpperCase();
-
-    const updated = await Booking.findByIdAndUpdate(
-      id,
-      {
-        $set: {
-          status,
-          stripePaymentIntentId: paymentIntentId || undefined,
-          paidAt: new Date().toISOString(),
-        },
-      },
-      { new: true }
-    ).lean();
-
-    if (!updated) return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" });
-
-    return res.status(200).json({ ok: true, item: updated, booking: updated });
-  } catch {
-    return res.status(500).json({ ok: false, error: "BOOKING_MARK_PAID_FAILED" });
+    const id = String(req.params.id || "").trim()
+    const item = await Booking.findById(id).lean()
+    if (!item) return res.status(404).json({ ok: false, error: "Booking not found" })
+    return res.status(200).json(item)
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: "BOOKING_FETCH_FAILED", detail: err?.message || "Internal Server Error" })
   }
-});
+})
 
-export default router;
+export default router
