@@ -5,6 +5,61 @@ const router = express.Router();
 
 const usersCollection = () => mongoose.connection.db.collection("users");
 
+const getEmailFromToken = (authHeader) => {
+  const raw = String(authHeader || "").trim();
+  if (!raw.toLowerCase().startsWith("bearer ")) return "";
+  const token = raw.slice(7).trim();
+  if (!token.startsWith("DEV_TOKEN_")) return "";
+  const encoded = token.replace("DEV_TOKEN_", "");
+  try {
+    return Buffer.from(encoded, "base64").toString("utf8").trim().toLowerCase();
+  } catch {
+    return "";
+  }
+};
+
+router.get("/me", async (req, res) => {
+  try {
+    const email = getEmailFromToken(req.headers.authorization);
+
+    if (!email) {
+      return res.status(401).json({
+        ok: false,
+        message: "UNAUTHORIZED"
+      });
+    }
+
+    const user = await usersCollection().findOne(
+      { email },
+      { projection: { password: 0 } }
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        ok: false,
+        message: "USER_NOT_FOUND"
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      user: {
+        id: String(user._id),
+        name: String(user.name || ""),
+        email: String(user.email || ""),
+        role: String(user.role || "traveler"),
+        createdAt: user.createdAt || null,
+        updatedAt: user.updatedAt || null
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ME_ERROR"
+    });
+  }
+});
+
 router.post("/login", async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
