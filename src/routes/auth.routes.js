@@ -52,10 +52,67 @@ router.get("/me", async (req, res) => {
         updatedAt: user.updatedAt || null
       }
     });
-  } catch (error) {
+  } catch {
     return res.status(500).json({
       ok: false,
       message: "ME_ERROR"
+    });
+  }
+});
+
+router.put("/me", async (req, res) => {
+  try {
+    const email = getEmailFromToken(req.headers.authorization);
+
+    if (!email) {
+      return res.status(401).json({
+        ok: false,
+        message: "UNAUTHORIZED"
+      });
+    }
+
+    const name = String(req.body?.name || "").trim();
+
+    if (!name) {
+      return res.status(400).json({
+        ok: false,
+        message: "NAME_REQUIRED"
+      });
+    }
+
+    const now = new Date();
+
+    const result = await usersCollection().findOneAndUpdate(
+      { email },
+      { $set: { name, updatedAt: now } },
+      {
+        returnDocument: "after",
+        projection: { password: 0 }
+      }
+    );
+
+    if (!result) {
+      return res.status(404).json({
+        ok: false,
+        message: "USER_NOT_FOUND"
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      user: {
+        id: String(result._id),
+        name: String(result.name || ""),
+        email: String(result.email || ""),
+        role: String(result.role || "traveler"),
+        createdAt: result.createdAt || null,
+        updatedAt: result.updatedAt || null
+      }
+    });
+  } catch {
+    return res.status(500).json({
+      ok: false,
+      message: "UPDATE_ME_ERROR"
     });
   }
 });
@@ -100,7 +157,7 @@ router.post("/login", async (req, res) => {
         role: String(user.role || "traveler")
       }
     });
-  } catch (error) {
+  } catch {
     return res.status(500).json({
       ok: false,
       message: "LOGIN_ERROR"
@@ -162,7 +219,7 @@ router.post("/register", async (req, res) => {
         role: "traveler"
       }
     });
-  } catch (error) {
+  } catch {
     return res.status(500).json({
       ok: false,
       message: "REGISTER_ERROR"
