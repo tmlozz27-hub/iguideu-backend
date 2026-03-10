@@ -1,56 +1,54 @@
-import express from "express";
-import cors from "cors";
-import { connectMongo } from "./services/mongo.js";
+import express from "express"
+import cors from "cors"
+import { connectMongo } from "./services/mongo.js"
 
-import authRoutes from "./routes/auth.routes.js";
-import guidesRoutes from "./routes/guides.routes.js";
-import bookingsRoutes from "./routes/bookings.routes.js";
-import paymentsRoutes from "./routes/payments.routes.js";
-import stripeWebhookRoutes from "./routes/stripe.webhook.routes.js";
+import authRoutes from "./routes/auth.routes.js"
+import guidesRoutes from "./routes/guides.routes.js"
+import bookingsRoutes from "./routes/bookings.routes.js"
+import paymentsRoutes from "./routes/payments.routes.js"
+import stripeWebhookRoutes from "./routes/stripe.webhook.routes.js"
 
-const app = express();
+const app = express()
 
-app.use(cors({ origin: "*", credentials: false }));
+app.use(cors({ origin: "*", credentials: false }))
 
-app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
+app.use("/api/stripe/webhook", express.raw({ type: "application/json" }))
 
-const jsonParser = express.json({ limit: "2mb" });
-const urlParser = express.urlencoded({ extended: true, limit: "2mb" });
-
-app.use((req, res, next) => {
-  if ((req.originalUrl || "").startsWith("/api/stripe/webhook")) return next();
-  jsonParser(req, res, next);
-});
+const jsonParser = express.json({ limit: "2mb" })
+const urlParser = express.urlencoded({ extended: true, limit: "2mb" })
 
 app.use((req, res, next) => {
-  if ((req.originalUrl || "").startsWith("/api/stripe/webhook")) return next();
-  urlParser(req, res, next);
-});
+  if ((req.originalUrl || "").startsWith("/api/stripe/webhook")) return next()
+  jsonParser(req, res, next)
+})
 
 app.use((req, res, next) => {
-  const u = req.originalUrl || "";
+  if ((req.originalUrl || "").startsWith("/api/stripe/webhook")) return next()
+  urlParser(req, res, next)
+})
+
+app.use((req, res, next) => {
+  const u = req.originalUrl || ""
   if (u.startsWith("/api/bookings") || u.startsWith("/api/reservations")) {
-    console.log(new Date().toISOString(), req.method, u);
+    console.log(new Date().toISOString(), req.method, u)
   }
-  next();
-});
+  next()
+})
 
-app.get("/api/health", (req, res) => res.status(200).json({ status: "OK" }));
+app.get("/api/health", (req, res) => res.status(200).json({ status: "OK" }))
 
-app.use("/api/auth", authRoutes);
-app.use("/api/guides", guidesRoutes);
+app.use("/api/auth", authRoutes)
+app.use("/api/guides", guidesRoutes)
+app.use("/api/bookings", bookingsRoutes)
+app.use("/api/reservations", bookingsRoutes)
+app.use("/api/payments", paymentsRoutes)
+app.use("/api/stripe", stripeWebhookRoutes)
 
-app.use("/api/bookings", bookingsRoutes);
-app.use("/api/reservations", bookingsRoutes);
+const HOST = process.env.HOST || "0.0.0.0"
+const PORT = Number(process.env.PORT || 4020)
 
-app.use("/api/payments", paymentsRoutes);
-app.use("/api/stripe", stripeWebhookRoutes);
-
-const HOST = process.env.HOST || "0.0.0.0";
-const PORT = Number(process.env.PORT || 4020);
-
-await connectMongo();
+await connectMongo()
 
 app.listen(PORT, HOST, () => {
-  console.log(`Server ON -> http://${HOST}:${PORT}`);
-});
+  console.log(`Server ON -> http://${HOST}:${PORT}`)
+})

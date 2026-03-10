@@ -1,74 +1,131 @@
-import express from "express";
-import Stripe from "stripe";
+import express from "express"
+import Stripe from "stripe"
 
-const router = express.Router();
+const router = express.Router()
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET || "";
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
+const STRIPE_SECRET_KEY =
+  process.env.STRIPE_SECRET_KEY ||
+  process.env.STRIPE_SECRET ||
+  ""
 
-let stripe = null;
-if (STRIPE_SECRET_KEY) stripe = new Stripe(STRIPE_SECRET_KEY);
+const STRIPE_WEBHOOK_SECRET =
+  process.env.STRIPE_WEBHOOK_SECRET ||
+  ""
 
-async function markBookingPaid(bookingId, paymentIntentId) {
-  if (!bookingId) return;
+let stripe = null
 
-  let Booking = null;
-  try {
-    const mod = await import("../models/Booking.js");
-    Booking = mod.default || mod.Booking || null;
-  } catch {
-    Booking = null;
-  }
-
-  if (!Booking) return;
-
-  await Booking.findByIdAndUpdate(
-    bookingId,
-    {
-      $set: {
-        status: "PAID",
-        stripePaymentIntentId: paymentIntentId || "",
-        paidAt: new Date().toISOString(),
-      },
-    },
-    { new: false }
-  );
+if (STRIPE_SECRET_KEY) {
+  stripe = new Stripe(STRIPE_SECRET_KEY)
 }
 
-router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+async function loadBookingModel() {
   try {
-    if (!stripe) return res.status(500).send("stripe_not_configured");
-    if (!STRIPE_WEBHOOK_SECRET) return res.status(500).send("webhook_secret_missing");
+    const mod = await import("../models/Booking.js")
+    return mod.default || mod.Booking || null
+  } catch {
+    return null
+  }
+}
 
-    const sig = req.headers["stripe-signature"];
-    let event;
+router.post("/webhook", async (req, res) => {
+  try {
+    if (!stripe)
+      return res.status(500).send("stripe_not_configured")
+
+    if (!STRIPE_WEBHOOK_SECRET)
+      return res.status(500).send("webhook_secret_missing")
+
+    const sig = req.headers["stripe-signature"]
+
+    let event
 
     try {
-      event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        STRIPE_WEBHOOK_SECRET
+      )
     } catch {
-      return res.status(400).send("signature_verification_failed");
+      return res.status(400).send("signature_verification_failed")
     }
 
-    const type = event?.type ? String(event.type) : "";
-    const obj = event?.data?.object || {};
-    const piId = obj?.id ? String(obj.id) : "";
-    const bookingId = obj?.metadata?.bookingId ? String(obj.metadata.bookingId) : "";
+    const type = event?.type ? String(event.type) : ""
+    const obj = event?.data?.object || {}
 
-    console.log(new Date().toISOString(), "WEBHOOK /api/stripe/webhook type=", type, "pi=", piId, "bookingId=", bookingId);
+    const paymentIntentId = obj?.id
+      ? String(obj.id)
+      : ""
+
+    const bookingId = obj?.metadata?.bookingId
+      ? String(obj.metadata.bookingId)
+      : ""
+
+    console.log(
+      new Date().toISOString(),
+      "WEBHOOK",
+      type,
+      "pi=",
+      paymentIntentId,
+      "bookingId=",
+      bookingId
+    )
 
     if (type === "payment_intent.succeeded") {
+      const Booking = await loadBookingModel()
+
+      if (!Booking) {
+        console.log("BOOKING MODEL NOT LOADED")
+        return res.status(200).json({ received: true })
+      }
+
+      let booking = null
+
       if (bookingId) {
-        await markBookingPaid(bookingId, piId);
-        console.log(new Date().toISOString(), "BOOKING MARKED PAID", bookingId, piId);
+        booking = await Booking.findById(bookingId)
+      }
+
+      if (!booking && paymentIntentId) {
+        booking = await Booking.findOne({
+          stripePaymentIntentId: paymentIntentId,
+        })
+      }
+
+      if (!booking) {
+        console.log(
+          "NO BOOKING FOUND FOR EVENT",
+          paymentIntentId,
+          bookingId
+        )
       } else {
-        console.log(new Date().toISOString(), "NO bookingId IN METADATA");
+        booking.status = "PAID"
+        booking.stripePaymentIntentId =
+          paymentIntentId || booking.stripePaymentIntentId
+
+        booking.paidAt = new Date()
+
+        await booking.save({ validateBeforeSave: false })
+
+        console.log(
+          "BOOKING UPDATED TO PAID",
+          String(booking._id),
+          paymentIntentId
+        )
       }
     }
 
-    return res.status(200).json({ received: true, type });
-  } catch {
-    return res.status(500).send("webhook_error");
-  }
-});
+    return res.status(200).json({
+      received: true,
+      type,
+    })
+  } catch (err) {
+    console.log(
+      new Date().toISOString(),
+      "WEBHOOK ERROR",
+      err?.message || "unknown"
+    )
 
-export default router;
+    return res.status(500).send("webhook_error")
+  }
+})
+
+export default router

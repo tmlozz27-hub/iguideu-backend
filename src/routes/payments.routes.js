@@ -1,45 +1,97 @@
-router.post("/create-intent", async (req, res) => {
+﻿import express from "express";
+import mongoose from "mongoose";
+
+const router = express.Router();
+
+function pickAmount(body = {}) {
+  const raw =
+    body.amountCents ??
+    body.amount_centavos ??
+    body.amount_cent ??
+    body.amountUsdCents ??
+    body.totalAmountCents ??
+    body.total_cents ??
+    body.amount ??
+    body.amountUsd ??
+    body.totalAmount ??
+    body.total;
+
+  const n = Number(raw);
+
+  if (!Number.isFinite(n) || n <= 0) {
+    return { ok: false, amountCents: 0 };
+  }
+
+  if (n >= 1000) {
+    return { ok: true, amountCents: Math.round(n) };
+  }
+
+  return { ok: true, amountCents: Math.round(n * 100) };
+}
+
+router.post("/pay-test", async (req, res) => {
   try {
-    const bookingId = String(req.body?.bookingId || "").trim()
-    if (!bookingId) return res.status(400).json({ ok: false, error: "BOOKING_ID_REQUIRED" })
+    const bookingId = String(req.body?.bookingId || "").trim();
 
-    const booking = await Booking.findById(bookingId)
-    if (!booking) return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" })
-
-    const currency = String(booking.currency || req.body?.currency || "usd").toLowerCase()
-
-    const amountCents =
-      Number(booking.amountCents) ||
-      Number(booking.totalCents) ||
-      Number(booking.totalAmountCents) ||
-      Math.round(Number(booking.totalAmount || booking.total || booking.amount || 0) * 100) ||
-      Math.round(Number(booking.price || 0) * Number(booking.hours || 1) * 100)
-
-    if (!Number.isFinite(amountCents) || amountCents <= 0) {
-      return res.status(400).json({ ok: false, error: "AMOUNT_REQUIRED" })
+    if (!bookingId) {
+      return res.status(400).json({ error: "BOOKING_ID_REQUIRED" });
     }
 
-    const feeCents = Math.round(amountCents * 0.1)
+    const parsed = pickAmount(req.body);
 
-    const pi = await stripe.paymentIntents.create({
-      amount: amountCents,
-      currency,
-      automatic_payment_methods: { enabled: true },
-      metadata: { bookingId: String(booking._id) },
-    })
+    if (!parsed.ok) {
+      return res.status(400).json({
+        error: "AMOUNT_REQUIRED",
+        received: req.body || null,
+      });
+    }
 
-    booking.stripePaymentIntentId = pi.id
-    await booking.save()
+    const db = mongoose.connection?.db;
+    if (!db) {
+      return res.status(500).json({ error: "Mongo not connected" });
+    }
 
-    return res.status(200).json({
+    const bookings = db.collection("bookings");
+
+    const amountCents = parsed.amountCents;
+    const amountUsd = Number((amountCents / 100).toFixed(2));
+
+    const result = await bookings.findOneAndUpdate(
+      { _id: new mongoose.Types.ObjectId(bookingId) },
+      {
+        $set: {
+          status: "PAID",
+          amount: amountUsd,
+          amountUsd,
+          amountCents,
+          totalAmount: amountUsd,
+          paidAt: new Date(),
+          paymentMode: "test",
+          paymentStatus: "paid",
+        },
+      },
+      { returnDocument: "after" }
+    );
+
+    const booking = result?.value || result;
+
+    if (!booking) {
+      return res.status(404).json({ error: "BOOKING_NOT_FOUND" });
+    }
+
+    return res.json({
       ok: true,
-      clientSecret: pi.client_secret,
-      paymentIntentId: pi.id,
+      bookingId,
+      amountUsd,
       amountCents,
-      currency,
-      feeCents,
-    })
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: "CREATE_INTENT_FAILED" })
+      status: "PAID",
+      booking,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "PAY_TEST_ERROR",
+    });
   }
-})
+});
+
+export default router;

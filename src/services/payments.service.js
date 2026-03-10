@@ -1,23 +1,22 @@
-import Booking from "../models/Booking.js";
+import Booking from "../models/Booking.js"
 
 export async function markBookingPaid(bookingId, paymentIntentId) {
-  const id = String(bookingId || "").trim();
-  const pi = String(paymentIntentId || "").trim();
+  const id = String(bookingId || "").trim()
+  const pi = String(paymentIntentId || "").trim()
 
-  if (!id) throw new Error("BOOKING_ID_REQUIRED");
+  if (!id) throw new Error("BOOKING_ID_REQUIRED")
 
   const update = {
     $set: {
-      paymentStatus: "paid",
-      status: "confirmed",
-      stripePaymentIntentId: pi || null,
+      status: "PAID",
+      stripePaymentIntentId: pi || "",
       paidAt: new Date(),
     },
-  };
+  }
 
-  const booking = await Booking.findByIdAndUpdate(id, update, { new: true });
+  const booking = await Booking.findByIdAndUpdate(id, update, { new: true, runValidators: false })
 
-  if (!booking) throw new Error("BOOKING_NOT_FOUND");
+  if (!booking) throw new Error("BOOKING_NOT_FOUND")
 
-  return booking;
+  return booking
 }
