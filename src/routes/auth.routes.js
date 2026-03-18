@@ -227,4 +227,30 @@ router.post("/register", async (req, res) => {
   }
 });
 
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        message: "EMAIL_REQUIRED"
+      });
+    }
+
+    const user = await usersCollection().findOne({ email });
+
+    return res.status(200).json({
+      ok: true,
+      exists: !!user,
+      message: "IF_ACCOUNT_EXISTS_INSTRUCTIONS_SENT"
+    });
+  } catch {
+    return res.status(500).json({
+      ok: false,
+      message: "FORGOT_PASSWORD_ERROR"
+    });
+  }
+});
+
 export default router;

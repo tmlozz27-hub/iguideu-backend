@@ -7,6 +7,7 @@ import guidesRoutes from "./routes/guides.routes.js"
 import bookingsRoutes from "./routes/bookings.routes.js"
 import paymentsRoutes from "./routes/payments.routes.js"
 import stripeWebhookRoutes from "./routes/stripe.webhook.routes.js"
+import chatRoutes from "./routes/chat.routes.js"
 
 const app = express()
 
@@ -29,7 +30,11 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
   const u = req.originalUrl || ""
-  if (u.startsWith("/api/bookings") || u.startsWith("/api/reservations")) {
+  if (
+    u.startsWith("/api/bookings") ||
+    u.startsWith("/api/reservations") ||
+    u.startsWith("/api/chat")
+  ) {
     console.log(new Date().toISOString(), req.method, u)
   }
   next()
@@ -43,6 +48,7 @@ app.use("/api/bookings", bookingsRoutes)
 app.use("/api/reservations", bookingsRoutes)
 app.use("/api/payments", paymentsRoutes)
 app.use("/api/stripe", stripeWebhookRoutes)
+app.use("/api/chat", chatRoutes)
 
 const HOST = process.env.HOST || "0.0.0.0"
 const PORT = Number(process.env.PORT || 4020)
