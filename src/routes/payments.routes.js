@@ -1,5 +1,6 @@
 ﻿import express from "express";
 import mongoose from "mongoose";
+import { recordGuidePaidBooking } from "../services/guide-membership.js";
 
 const router = express.Router();
 
@@ -92,13 +93,16 @@ router.post("/pay-test", async (req, res) => {
       return res.status(404).json({ error: "BOOKING_NOT_FOUND" });
     }
 
+    const membershipTracking = await recordGuidePaidBooking(booking, "pay-test");
+
     return res.json({
       ok: true,
       bookingId,
       amountUsd,
       amountCents,
       status: "PAID",
-      booking
+      booking,
+      membershipTracking
     });
   } catch (error) {
     return res.status(500).json({

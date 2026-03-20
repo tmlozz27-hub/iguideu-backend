@@ -12,9 +12,24 @@ const GuideSchema = new mongoose.Schema(
     priceDay: { type: Number, default: 0 },
     priceFullDay24h: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
+
+    membership: {
+      active: { type: Boolean, default: false },
+      required: { type: Boolean, default: false },
+      monthlyFeeUsd: { type: Number, default: 10 },
+      requiredFromBookingCount: { type: Number, default: 2 },
+      startedAt: { type: Date, default: null }
+    },
+
+    stats: {
+      totalPaidBookings: { type: Number, default: 0 },
+      firstPaidBookingAt: { type: Date, default: null },
+      secondPaidBookingAt: { type: Date, default: null },
+      lastPaidBookingAt: { type: Date, default: null },
+      lastPaidBookingId: { type: String, default: "" }
+    }
   },
   { timestamps: true }
 );
 
-// evita recompilar modelo en hot reload
 export default mongoose.models.Guide || mongoose.model("Guide", GuideSchema);
