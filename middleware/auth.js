@@ -1,24 +1,13 @@
-﻿// middleware/auth.js
-// =====================================================
-// AUTH middleware (simple, seguro y con BYPASS público)
-// PUBLICO:
-// - GET  /api/health
-// - GET  /api/guides
-// - POST /api/bookings
-// - GET  /api/bookings?email=...
-// - POST /api/payments/create-intent
-// - POST /api/stripe/webhook  (Stripe)
-// - /api/register, /api/login, /api/refresh
-// TODO lo demás requiere Bearer token
-// =====================================================
-
-function normalizeUrl(req) {
+﻿function normalizeUrl(req) {
   const u = String(req.originalUrl || req.url || "");
   return u.split("?")[0] || u;
 }
 
 function isPublicRequest(req) {
   const path = normalizeUrl(req);
+
+  // Preflight / CORS
+  if (req.method === "OPTIONS") return true;
 
   // Health
   if (req.method === "GET" && path === "/api/health") return true;
@@ -31,20 +20,17 @@ function isPublicRequest(req) {
   if (path === "/api/login" && req.method === "POST") return true;
   if (path === "/api/refresh" && req.method === "POST") return true;
 
-  // Bookings públicos:
-  // POST /api/bookings
+  // Bookings públicos
   if (path === "/api/bookings" && req.method === "POST") return true;
 
-  // GET /api/bookings?email=...
   if (path === "/api/bookings" && req.method === "GET") {
     const email = String(req.query?.email || "").trim();
     if (email) return true;
   }
 
-  // Payments: create intent (si tu app no manda Bearer)
+  // Payments públicos
   if (path === "/api/payments/create-intent" && req.method === "POST") return true;
   if (path === "/api/payments/checkout" && req.method === "POST") return true;
-
 
   // Stripe webhook siempre público
   if (path === "/api/stripe/webhook" && req.method === "POST") return true;
@@ -68,11 +54,9 @@ export default function auth(req, res, next) {
       return res.status(401).json({ ok: false, error: "Missing Bearer token" });
     }
 
-    // ✅ Por ahora: aceptamos cualquier token no vacío (modo dev)
-    // TODO: validar JWT/Firebase/etc.
     req.user = { token };
     return next();
-  } catch (e) {
+  } catch {
     return res.status(500).json({ ok: false, error: "AUTH_MIDDLEWARE_FAILED" });
   }
 }
