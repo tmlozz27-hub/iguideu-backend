@@ -62,6 +62,26 @@ const verifyPassword = (plainPassword, storedPassword) => {
   }
 };
 
+const normalizePhone = (value) => {
+  return String(value || "").trim();
+};
+
+const publicUser = (user) => {
+  return {
+    id: String(user._id),
+    name: String(user.name || ""),
+    email: String(user.email || ""),
+    role: String(user.role || "traveler"),
+    phone: String(user.phone || ""),
+    emailVerified: Boolean(user.emailVerified),
+    emailVerifiedAt: user.emailVerifiedAt || null,
+    phoneVerified: Boolean(user.phoneVerified),
+    phoneVerifiedAt: user.phoneVerifiedAt || null,
+    createdAt: user.createdAt || null,
+    updatedAt: user.updatedAt || null
+  };
+};
+
 router.get("/me", async (req, res) => {
   try {
     const email = getEmailFromToken(req.headers.authorization);
@@ -87,14 +107,7 @@ router.get("/me", async (req, res) => {
 
     return res.status(200).json({
       ok: true,
-      user: {
-        id: String(user._id),
-        name: String(user.name || ""),
-        email: String(user.email || ""),
-        role: String(user.role || "traveler"),
-        createdAt: user.createdAt || null,
-        updatedAt: user.updatedAt || null
-      }
+      user: publicUser(user)
     });
   } catch {
     return res.status(500).json({
@@ -116,6 +129,7 @@ router.put("/me", async (req, res) => {
     }
 
     const name = String(req.body?.name || "").trim();
+    const phone = normalizePhone(req.body?.phone);
 
     if (!name) {
       return res.status(400).json({
@@ -128,7 +142,13 @@ router.put("/me", async (req, res) => {
 
     const result = await usersCollection().findOneAndUpdate(
       { email },
-      { $set: { name, updatedAt: now } },
+      {
+        $set: {
+          name,
+          phone,
+          updatedAt: now
+        }
+      },
       {
         returnDocument: "after",
         projection: { password: 0 }
@@ -144,14 +164,7 @@ router.put("/me", async (req, res) => {
 
     return res.status(200).json({
       ok: true,
-      user: {
-        id: String(result._id),
-        name: String(result.name || ""),
-        email: String(result.email || ""),
-        role: String(result.role || "traveler"),
-        createdAt: result.createdAt || null,
-        updatedAt: result.updatedAt || null
-      }
+      user: publicUser(result)
     });
   } catch {
     return res.status(500).json({
@@ -204,17 +217,17 @@ router.post("/login", async (req, res) => {
       );
     }
 
+    const freshUser = await usersCollection().findOne(
+      { _id: user._id },
+      { projection: { password: 0 } }
+    );
+
     const token = makeToken(email);
 
     return res.status(200).json({
       ok: true,
       token,
-      user: {
-        id: String(user._id),
-        name: String(user.name || ""),
-        email: String(user.email || ""),
-        role: String(user.role || "traveler")
-      }
+      user: publicUser(freshUser || user)
     });
   } catch {
     return res.status(500).json({
@@ -229,6 +242,7 @@ router.post("/register", async (req, res) => {
     const name = String(req.body?.name || "").trim();
     const email = String(req.body?.email || "").trim().toLowerCase();
     const password = String(req.body?.password || "").trim();
+    const phone = normalizePhone(req.body?.phone);
 
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -260,6 +274,11 @@ router.post("/register", async (req, res) => {
       email,
       password: hashPassword(password),
       role: "traveler",
+      phone,
+      emailVerified: false,
+      emailVerifiedAt: null,
+      phoneVerified: false,
+      phoneVerifiedAt: null,
       createdAt: now,
       updatedAt: now
     };
@@ -275,7 +294,14 @@ router.post("/register", async (req, res) => {
         id: String(result.insertedId),
         name,
         email,
-        role: "traveler"
+        role: "traveler",
+        phone,
+        emailVerified: false,
+        emailVerifiedAt: null,
+        phoneVerified: false,
+        phoneVerifiedAt: null,
+        createdAt: now,
+        updatedAt: now
       }
     });
   } catch {
