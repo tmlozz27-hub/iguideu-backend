@@ -1,9 +1,12 @@
 import express from "express";
 import mongoose from "mongoose";
+import crypto from "crypto";
 
 const router = express.Router();
 
 const usersCollection = () => mongoose.connection.db.collection("users");
+
+const PASSWORD_PREFIX = "scrypt$";
 
 const getEmailFromToken = (authHeader) => {
   const raw = String(authHeader || "").trim();
@@ -15,6 +18,47 @@ const getEmailFromToken = (authHeader) => {
     return Buffer.from(encoded, "base64").toString("utf8").trim().toLowerCase();
   } catch {
     return "";
+  }
+};
+
+const makeToken = (email) => {
+  return "DEV_TOKEN_" + Buffer.from(String(email || "").trim().toLowerCase()).toString("base64");
+};
+
+const isHashedPassword = (value) => {
+  return String(value || "").startsWith(PASSWORD_PREFIX);
+};
+
+const hashPassword = (plainPassword) => {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const derived = crypto.scryptSync(String(plainPassword || ""), salt, 64).toString("hex");
+  return `${PASSWORD_PREFIX}${salt}$${derived}`;
+};
+
+const verifyPassword = (plainPassword, storedPassword) => {
+  const plain = String(plainPassword || "");
+  const stored = String(storedPassword || "");
+
+  if (!stored) return false;
+
+  if (!isHashedPassword(stored)) {
+    return stored === plain;
+  }
+
+  const parts = stored.split("$");
+  if (parts.length !== 3) return false;
+
+  const salt = parts[1];
+  const savedHex = parts[2];
+
+  try {
+    const derivedHex = crypto.scryptSync(plain, salt, 64).toString("hex");
+    const a = Buffer.from(savedHex, "hex");
+    const b = Buffer.from(derivedHex, "hex");
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
   }
 };
 
@@ -138,14 +182,29 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    if (String(user.password || "") !== password) {
+    const storedPassword = String(user.password || "");
+    const valid = verifyPassword(password, storedPassword);
+
+    if (!valid) {
       return res.status(401).json({
         ok: false,
         message: "INVALID_CREDENTIALS"
       });
     }
 
-    const token = "DEV_TOKEN_" + Buffer.from(email).toString("base64");
+    if (!isHashedPassword(storedPassword)) {
+      await usersCollection().updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            password: hashPassword(password),
+            updatedAt: new Date()
+          }
+        }
+      );
+    }
+
+    const token = makeToken(email);
 
     return res.status(200).json({
       ok: true,
@@ -199,7 +258,7 @@ router.post("/register", async (req, res) => {
     const doc = {
       name,
       email,
-      password,
+      password: hashPassword(password),
       role: "traveler",
       createdAt: now,
       updatedAt: now
@@ -207,7 +266,7 @@ router.post("/register", async (req, res) => {
 
     const result = await usersCollection().insertOne(doc);
 
-    const token = "DEV_TOKEN_" + Buffer.from(email).toString("base64");
+    const token = makeToken(email);
 
     return res.status(201).json({
       ok: true,
@@ -238,11 +297,13 @@ router.post("/forgot-password", async (req, res) => {
       });
     }
 
-    const user = await usersCollection().findOne({ email });
+    await usersCollection().findOne(
+      { email },
+      { projection: { _id: 1 } }
+    );
 
     return res.status(200).json({
       ok: true,
-      exists: !!user,
       message: "IF_ACCOUNT_EXISTS_INSTRUCTIONS_SENT"
     });
   } catch {
