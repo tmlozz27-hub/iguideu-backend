@@ -29,12 +29,25 @@ function pickAmount(body = {}) {
   return { ok: true, amountCents: Math.round(n * 100) };
 }
 
+function isProductionLike() {
+  const env = String(process.env.NODE_ENV || "").trim().toLowerCase();
+  return env === "production";
+}
+
 router.post("/pay-test", async (req, res) => {
   try {
+    if (isProductionLike()) {
+      return res.status(403).json({ error: "PAY_TEST_DISABLED_IN_PRODUCTION" });
+    }
+
     const bookingId = String(req.body?.bookingId || "").trim();
 
     if (!bookingId) {
       return res.status(400).json({ error: "BOOKING_ID_REQUIRED" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(400).json({ error: "BOOKING_ID_INVALID" });
     }
 
     const parsed = pickAmount(req.body);
@@ -42,17 +55,17 @@ router.post("/pay-test", async (req, res) => {
     if (!parsed.ok) {
       return res.status(400).json({
         error: "AMOUNT_REQUIRED",
-        received: req.body || null,
+        received: req.body || null
       });
     }
 
     const db = mongoose.connection?.db;
+
     if (!db) {
       return res.status(500).json({ error: "Mongo not connected" });
     }
 
     const bookings = db.collection("bookings");
-
     const amountCents = parsed.amountCents;
     const amountUsd = Number((amountCents / 100).toFixed(2));
 
@@ -67,8 +80,8 @@ router.post("/pay-test", async (req, res) => {
           totalAmount: amountUsd,
           paidAt: new Date(),
           paymentMode: "test",
-          paymentStatus: "paid",
-        },
+          paymentStatus: "paid"
+        }
       },
       { returnDocument: "after" }
     );
@@ -85,11 +98,11 @@ router.post("/pay-test", async (req, res) => {
       amountUsd,
       amountCents,
       status: "PAID",
-      booking,
+      booking
     });
   } catch (error) {
     return res.status(500).json({
-      error: error?.message || "PAY_TEST_ERROR",
+      error: error?.message || "PAY_TEST_ERROR"
     });
   }
 });
