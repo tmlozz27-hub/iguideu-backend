@@ -8,20 +8,15 @@ const BookingSchema = new mongoose.Schema(
     travelerName: { type: String, default: "" },
     travelerEmail: { type: String, required: true, index: true },
     guideId: { type: String, required: true, index: true },
-
     date: { type: String, required: true },
     hours: { type: Number, required: true, min: 0.25 },
-
     currency: { type: String, default: "usd" },
     price: { type: Number, required: true, min: 0 },
     amountCents: { type: Number, required: true, min: 0 },
-
     status: { type: String, default: "PENDING", index: true },
-
     total: { type: Number, default: 0 },
     totalAmount: { type: Number, default: 0 },
     amount: { type: Number, default: 0 },
-
     stripePaymentIntentId: { type: String, default: null },
     paidAt: { type: Date, default: null }
   },
@@ -38,35 +33,42 @@ function toNumber(v, fallback = 0) {
 
 router.get("/", async (req, res) => {
   try {
-    const { travelerEmail, guideId, status, limit } = req.query || {}
+    const { travelerEmail, status, limit } = req.query || {}
+    const email = String(travelerEmail || "").trim().toLowerCase()
 
-    const q = {}
-    if (travelerEmail) q.travelerEmail = String(travelerEmail)
-    if (guideId) q.guideId = String(guideId)
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: "travelerEmail is required"
+      })
+    }
+
+    const q = { travelerEmail: email }
+
     if (status) q.status = String(status)
 
     const lim = Math.min(Math.max(toNumber(limit, 50), 1), 200)
-
     const items = await Booking.find(q).sort({ createdAt: -1 }).limit(lim).lean()
+
     return res.status(200).json(items)
   } catch (err) {
-    return res.status(500).json({ ok: false, error: "BOOKINGS_FETCH_FAILED", detail: err?.message || "Internal Server Error" })
+    return res.status(500).json({
+      ok: false,
+      error: "BOOKINGS_FETCH_FAILED",
+      detail: err?.message || "Internal Server Error"
+    })
   }
 })
 
 router.post("/", async (req, res) => {
   try {
     const b = req.body || {}
-
     const travelerName = String(b.travelerName || "")
     const travelerEmail = String(b.travelerEmail || "").trim().toLowerCase()
-
     const guideId = String(b.guideId || b.guide || "").trim()
     const date = String(b.date || b.startDate || "").trim()
-
     const hours = toNumber(b.hours ?? b.durationHours ?? b.duration ?? 0, 0)
     const currency = String(b.currency || "usd").trim().toLowerCase()
-
     const price = toNumber(
       b.price ?? b.total ?? b.totalAmount ?? b.amount ?? 0,
       0
@@ -105,15 +107,11 @@ router.post("/", async (req, res) => {
   }
 })
 
-router.get("/:id", async (req, res) => {
-  try {
-    const id = String(req.params.id || "").trim()
-    const item = await Booking.findById(id).lean()
-    if (!item) return res.status(404).json({ ok: false, error: "Booking not found" })
-    return res.status(200).json(item)
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: "BOOKING_FETCH_FAILED", detail: err?.message || "Internal Server Error" })
-  }
+router.get("/:id", async (_req, res) => {
+  return res.status(403).json({
+    ok: false,
+    error: "BOOKING_DIRECT_FETCH_DISABLED"
+  })
 })
 
 export default router
