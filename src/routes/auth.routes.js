@@ -7,6 +7,7 @@ const router = express.Router();
 const usersCollection = () => mongoose.connection.db.collection("users");
 
 const PASSWORD_PREFIX = "scrypt$";
+const RESET_TOKEN_MINUTES = 60;
 
 const getEmailFromToken = (authHeader) => {
   const raw = String(authHeader || "").trim();
@@ -80,6 +81,14 @@ const publicUser = (user) => {
     createdAt: user.createdAt || null,
     updatedAt: user.updatedAt || null
   };
+};
+
+const makeResetToken = () => {
+  return crypto.randomBytes(32).toString("hex");
+};
+
+const hashResetToken = (token) => {
+  return crypto.createHash("sha256").update(String(token || "")).digest("hex");
 };
 
 router.get("/me", async (req, res) => {
@@ -323,10 +332,34 @@ router.post("/forgot-password", async (req, res) => {
       });
     }
 
-    await usersCollection().findOne(
+    const user = await usersCollection().findOne(
       { email },
-      { projection: { _id: 1 } }
+      { projection: { _id: 1, email: 1 } }
     );
+
+    if (user) {
+      const rawToken = makeResetToken();
+      const resetTokenHash = hashResetToken(rawToken);
+      const resetTokenExpiresAt = new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000);
+
+      await usersCollection().updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            resetTokenHash,
+            resetTokenExpiresAt,
+            updatedAt: new Date()
+          }
+        }
+      );
+
+      return res.status(200).json({
+        ok: true,
+        message: "IF_ACCOUNT_EXISTS_INSTRUCTIONS_SENT",
+        resetToken: rawToken,
+        resetTokenExpiresAt
+      });
+    }
 
     return res.status(200).json({
       ok: true,
@@ -336,6 +369,65 @@ router.post("/forgot-password", async (req, res) => {
     return res.status(500).json({
       ok: false,
       message: "FORGOT_PASSWORD_ERROR"
+    });
+  }
+});
+
+router.post("/reset-password", async (req, res) => {
+  try {
+    const token = String(req.body?.token || "").trim();
+    const newPassword = String(req.body?.newPassword || "").trim();
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        ok: false,
+        message: "TOKEN_AND_NEW_PASSWORD_REQUIRED"
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        ok: false,
+        message: "PASSWORD_MIN_6"
+      });
+    }
+
+    const resetTokenHash = hashResetToken(token);
+
+    const user = await usersCollection().findOne({
+      resetTokenHash,
+      resetTokenExpiresAt: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        ok: false,
+        message: "INVALID_OR_EXPIRED_RESET_TOKEN"
+      });
+    }
+
+    await usersCollection().updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          password: hashPassword(newPassword),
+          updatedAt: new Date()
+        },
+        $unset: {
+          resetTokenHash: "",
+          resetTokenExpiresAt: ""
+        }
+      }
+    );
+
+    return res.status(200).json({
+      ok: true,
+      message: "PASSWORD_RESET_OK"
+    });
+  } catch {
+    return res.status(500).json({
+      ok: false,
+      message: "RESET_PASSWORD_ERROR"
     });
   }
 });

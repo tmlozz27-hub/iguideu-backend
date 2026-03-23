@@ -1,8 +1,16 @@
 ﻿import express from "express";
 import mongoose from "mongoose";
+import Stripe from "stripe";
+import Booking from "../models/Booking.js";
 import { recordGuidePaidBooking } from "../services/guide-membership.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
+
+const stripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim();
+const stripe = stripeSecretKey
+  ? new Stripe(stripeSecretKey, { apiVersion: "2025-09-30.clover" })
+  : null;
 
 function pickAmount(body = {}) {
   const raw =
@@ -35,13 +43,22 @@ function isProductionLike() {
   return env === "production";
 }
 
-router.post("/pay-test", async (req, res) => {
+function authEmail(req) {
+  return String(req.user?.email || "").trim().toLowerCase();
+}
+
+router.post("/pay-test", requireAuth, async (req, res) => {
   try {
     if (isProductionLike()) {
       return res.status(403).json({ error: "PAY_TEST_DISABLED_IN_PRODUCTION" });
     }
 
     const bookingId = String(req.body?.bookingId || "").trim();
+    const currentUserEmail = authEmail(req);
+
+    if (!currentUserEmail) {
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
 
     if (!bookingId) {
       return res.status(400).json({ error: "BOOKING_ID_REQUIRED" });
@@ -67,11 +84,29 @@ router.post("/pay-test", async (req, res) => {
     }
 
     const bookings = db.collection("bookings");
+    const bookingObjectId = new mongoose.Types.ObjectId(bookingId);
+
+    const existingBooking = await bookings.findOne({ _id: bookingObjectId });
+
+    if (!existingBooking) {
+      return res.status(404).json({ error: "BOOKING_NOT_FOUND" });
+    }
+
+    const bookingTravelerEmail = String(existingBooking.travelerEmail || "").trim().toLowerCase();
+
+    if (!bookingTravelerEmail) {
+      return res.status(400).json({ error: "BOOKING_TRAVELER_EMAIL_MISSING" });
+    }
+
+    if (bookingTravelerEmail !== currentUserEmail) {
+      return res.status(403).json({ error: "FORBIDDEN_BOOKING" });
+    }
+
     const amountCents = parsed.amountCents;
     const amountUsd = Number((amountCents / 100).toFixed(2));
 
     const result = await bookings.findOneAndUpdate(
-      { _id: new mongoose.Types.ObjectId(bookingId) },
+      { _id: bookingObjectId },
       {
         $set: {
           status: "PAID",
@@ -107,6 +142,89 @@ router.post("/pay-test", async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       error: error?.message || "PAY_TEST_ERROR"
+    });
+  }
+});
+
+router.post("/create-intent", requireAuth, async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: "STRIPE_NOT_CONFIGURED" });
+    }
+
+    const bookingId = String(req.body?.bookingId || "").trim();
+    const currentUserEmail = authEmail(req);
+
+    if (!currentUserEmail) {
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
+
+    if (!bookingId) {
+      return res.status(400).json({ error: "BOOKING_ID_REQUIRED" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(400).json({ error: "BOOKING_ID_INVALID" });
+    }
+
+    const parsed = pickAmount(req.body);
+
+    if (!parsed.ok) {
+      return res.status(400).json({
+        error: "AMOUNT_REQUIRED",
+        received: req.body || null
+      });
+    }
+
+    const booking = await Booking.findById(bookingId);
+
+    if (!booking) {
+      return res.status(404).json({ error: "BOOKING_NOT_FOUND" });
+    }
+
+    const bookingTravelerEmail = String(booking.travelerEmail || "").trim().toLowerCase();
+
+    if (!bookingTravelerEmail) {
+      return res.status(400).json({ error: "BOOKING_TRAVELER_EMAIL_MISSING" });
+    }
+
+    if (bookingTravelerEmail !== currentUserEmail) {
+      return res.status(403).json({ error: "FORBIDDEN_BOOKING" });
+    }
+
+    const amountCents = parsed.amountCents;
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: "usd",
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        bookingId: String(booking._id),
+        travelerEmail: bookingTravelerEmail
+      }
+    });
+
+    booking.amountCents = amountCents;
+    booking.amountUsd = Number((amountCents / 100).toFixed(2));
+    booking.amount = booking.amountUsd;
+    booking.totalAmount = booking.amountUsd;
+    booking.paymentMode = "stripe";
+    booking.paymentStatus = "pending";
+    booking.stripePaymentIntentId = paymentIntent.id;
+    await booking.save();
+
+    return res.json({
+      ok: true,
+      bookingId: String(booking._id),
+      paymentIntentId: paymentIntent.id,
+      clientSecret: paymentIntent.client_secret,
+      amountCents,
+      amountUsd: booking.amountUsd,
+      status: String(booking.status || "PENDING")
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "CREATE_INTENT_ERROR"
     });
   }
 });

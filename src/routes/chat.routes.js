@@ -1,5 +1,7 @@
 import express from "express"
+import mongoose from "mongoose"
 import ChatMessage from "../models/ChatMessage.js"
+import { requireAuth } from "../middleware/auth.js"
 
 const router = express.Router()
 
@@ -13,19 +15,63 @@ function toSafeLimit(value, fallback = 200) {
   return Math.min(Math.max(Math.round(n), 1), 500)
 }
 
+function authEmail(req) {
+  return String(req.user?.email || "").trim().toLowerCase()
+}
+
+async function loadBookingOrNull(bookingId) {
+  if (!mongoose.Types.ObjectId.isValid(bookingId)) return null
+  const db = mongoose.connection?.db
+  if (!db) return null
+  return db.collection("bookings").findOne({ _id: new mongoose.Types.ObjectId(bookingId) })
+}
+
 router.get("/health", (req, res) => {
   return res.status(200).json({ ok: true })
 })
 
-router.get("/messages", async (req, res) => {
+router.get("/messages", requireAuth, async (req, res) => {
   try {
     const bookingId = toSafeString(req.query.bookingId)
     const limit = toSafeLimit(req.query.limit, 200)
+    const currentUserEmail = authEmail(req)
+
+    if (!currentUserEmail) {
+      return res.status(401).json({
+        ok: false,
+        error: "UNAUTHORIZED"
+      })
+    }
 
     if (!bookingId) {
       return res.status(400).json({
         ok: false,
         error: "bookingId required"
+      })
+    }
+
+    const booking = await loadBookingOrNull(bookingId)
+
+    if (!booking) {
+      return res.status(404).json({
+        ok: false,
+        error: "BOOKING_NOT_FOUND"
+      })
+    }
+
+    const bookingTravelerEmail = String(booking.travelerEmail || "").trim().toLowerCase()
+
+    if (!bookingTravelerEmail) {
+      return res.status(400).json({
+        ok: false,
+        error: "BOOKING_TRAVELER_EMAIL_MISSING"
+      })
+    }
+
+    if (bookingTravelerEmail !== currentUserEmail) {
+      return res.status(403).json({
+        ok: false,
+        error: "FORBIDDEN_BOOKING"
       })
     }
 
@@ -46,15 +92,36 @@ router.get("/messages", async (req, res) => {
   }
 })
 
-router.post("/messages", async (req, res) => {
+router.post("/messages", requireAuth, async (req, res) => {
   try {
     const bookingId = toSafeString(req.body?.bookingId)
     const senderId = toSafeString(req.body?.senderId)
     const senderType = toSafeString(req.body?.senderType)
     const text = toSafeString(req.body?.text)
+    const currentUserEmail = authEmail(req)
+
+    if (!currentUserEmail) {
+      return res.status(401).json({ ok: false, error: "UNAUTHORIZED" })
+    }
 
     if (!bookingId) {
       return res.status(400).json({ ok: false, error: "bookingId required" })
+    }
+
+    const booking = await loadBookingOrNull(bookingId)
+
+    if (!booking) {
+      return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" })
+    }
+
+    const bookingTravelerEmail = String(booking.travelerEmail || "").trim().toLowerCase()
+
+    if (!bookingTravelerEmail) {
+      return res.status(400).json({ ok: false, error: "BOOKING_TRAVELER_EMAIL_MISSING" })
+    }
+
+    if (bookingTravelerEmail !== currentUserEmail) {
+      return res.status(403).json({ ok: false, error: "FORBIDDEN_BOOKING" })
     }
 
     if (!senderId) {
