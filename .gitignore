@@ -1,11 +1,8 @@
-# deps
 node_modules/
 
-# env
 .env
 .env.*
 
-# logs
 logs/
 *.log
 server-*.txt
@@ -14,37 +11,32 @@ server-crash.log
 tunnel-*.txt
 tunnel-*.log
 
-# temp / exports / backups
 *_backup_*.json
 _cleanup_plan_*.json
 *.tmp
 *.bak
+*.bak2
 *.old
+*.disabled
 
-# random helper txt
 RUTA_*.txt
 TUNNEL_CURRENT.txt
 tunnel-url.txt
 tunnel-url*.txt
 
-# binaries (NO subir)
-cloudflared.exe
-ngrok.exe
-
-# OS
-.DS_Store
-Thumbs.db
-.env
-.env.*
-node_modules/
 _backup_env_*.env
 _backup_routes_*/
 _backup_server_*.js
-cloudflared*.exe
-stripe*.exe
 __BACKUP__/
 __OLD__/
+
+cloudflared.exe
+cloudflared*.exe
+ngrok.exe
+stripe*.exe
+
 SAFE_ONLY.patch
 server.js.DISABLED
-*.bak2
-*.disabled
+
+.DS_Store
+Thumbs.db
