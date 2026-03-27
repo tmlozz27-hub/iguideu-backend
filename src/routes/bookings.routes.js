@@ -1,5 +1,6 @@
 import express from "express"
 import mongoose from "mongoose"
+import { requireAuth } from "../middleware/auth.js"
 
 const router = express.Router()
 
@@ -31,15 +32,19 @@ function toNumber(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback
 }
 
-router.get("/", async (req, res) => {
+function authEmail(req) {
+  return String(req.user?.email || "").trim().toLowerCase()
+}
+
+router.get("/", requireAuth, async (req, res) => {
   try {
-    const { travelerEmail, status, limit } = req.query || {}
-    const email = String(travelerEmail || "").trim().toLowerCase()
+    const { status, limit } = req.query || {}
+    const email = authEmail(req)
 
     if (!email) {
-      return res.status(400).json({
+      return res.status(401).json({
         ok: false,
-        error: "travelerEmail is required"
+        error: "UNAUTHORIZED"
       })
     }
 
@@ -60,11 +65,11 @@ router.get("/", async (req, res) => {
   }
 })
 
-router.post("/", async (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
   try {
     const b = req.body || {}
     const travelerName = String(b.travelerName || "")
-    const travelerEmail = String(b.travelerEmail || "").trim().toLowerCase()
+    const travelerEmail = authEmail(req)
     const guideId = String(b.guideId || b.guide || "").trim()
     const date = String(b.date || b.startDate || "").trim()
     const hours = toNumber(b.hours ?? b.durationHours ?? b.duration ?? 0, 0)
@@ -74,11 +79,21 @@ router.post("/", async (req, res) => {
       0
     )
 
-    if (!travelerEmail) return res.status(400).json({ ok: false, error: "travelerEmail is required" })
-    if (!guideId) return res.status(400).json({ ok: false, error: "guideId is required" })
-    if (!date) return res.status(400).json({ ok: false, error: "date is required (YYYY-MM-DD)" })
-    if (!hours || hours <= 0) return res.status(400).json({ ok: false, error: "hours must be > 0" })
-    if (price < 0) return res.status(400).json({ ok: false, error: "price must be >= 0" })
+    if (!travelerEmail) {
+      return res.status(401).json({ ok: false, error: "UNAUTHORIZED" })
+    }
+    if (!guideId) {
+      return res.status(400).json({ ok: false, error: "guideId is required" })
+    }
+    if (!date) {
+      return res.status(400).json({ ok: false, error: "date is required (YYYY-MM-DD)" })
+    }
+    if (!hours || hours <= 0) {
+      return res.status(400).json({ ok: false, error: "hours must be > 0" })
+    }
+    if (price < 0) {
+      return res.status(400).json({ ok: false, error: "price must be >= 0" })
+    }
 
     const amountCents = Math.round(price * 100)
 
@@ -107,7 +122,7 @@ router.post("/", async (req, res) => {
   }
 })
 
-router.get("/:id", async (_req, res) => {
+router.get("/:id", requireAuth, async (_req, res) => {
   return res.status(403).json({
     ok: false,
     error: "BOOKING_DIRECT_FETCH_DISABLED"
