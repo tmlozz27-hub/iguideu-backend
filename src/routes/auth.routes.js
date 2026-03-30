@@ -83,46 +83,26 @@ const publicUser = (user) => {
   };
 };
 
-const makeResetToken = () => {
-  return crypto.randomBytes(32).toString("hex");
-};
-
-const hashResetToken = (token) => {
-  return crypto.createHash("sha256").update(String(token || "")).digest("hex");
-};
+const makeResetToken = () => crypto.randomBytes(32).toString("hex");
+const hashResetToken = (token) =>
+  crypto.createHash("sha256").update(String(token || "")).digest("hex");
 
 router.get("/me", async (req, res) => {
   try {
     const email = getEmailFromToken(req.headers.authorization);
 
-    if (!email) {
-      return res.status(401).json({
-        ok: false,
-        message: "UNAUTHORIZED"
-      });
-    }
+    if (!email) return res.status(401).json({ ok: false, message: "UNAUTHORIZED" });
 
     const user = await usersCollection().findOne(
       { email },
       { projection: { password: 0 } }
     );
 
-    if (!user) {
-      return res.status(404).json({
-        ok: false,
-        message: "USER_NOT_FOUND"
-      });
-    }
+    if (!user) return res.status(404).json({ ok: false, message: "USER_NOT_FOUND" });
 
-    return res.status(200).json({
-      ok: true,
-      user: publicUser(user)
-    });
+    return res.status(200).json({ ok: true, user: publicUser(user) });
   } catch {
-    return res.status(500).json({
-      ok: false,
-      message: "ME_ERROR"
-    });
+    return res.status(500).json({ ok: false, message: "ME_ERROR" });
   }
 });
 
@@ -130,56 +110,26 @@ router.put("/me", async (req, res) => {
   try {
     const email = getEmailFromToken(req.headers.authorization);
 
-    if (!email) {
-      return res.status(401).json({
-        ok: false,
-        message: "UNAUTHORIZED"
-      });
-    }
+    if (!email) return res.status(401).json({ ok: false, message: "UNAUTHORIZED" });
 
     const name = String(req.body?.name || "").trim();
     const phone = normalizePhone(req.body?.phone);
 
-    if (!name) {
-      return res.status(400).json({
-        ok: false,
-        message: "NAME_REQUIRED"
-      });
-    }
+    if (!name) return res.status(400).json({ ok: false, message: "NAME_REQUIRED" });
 
     const now = new Date();
 
     const result = await usersCollection().findOneAndUpdate(
       { email },
-      {
-        $set: {
-          name,
-          phone,
-          updatedAt: now
-        }
-      },
-      {
-        returnDocument: "after",
-        projection: { password: 0 }
-      }
+      { $set: { name, phone, updatedAt: now } },
+      { returnDocument: "after", projection: { password: 0 } }
     );
 
-    if (!result) {
-      return res.status(404).json({
-        ok: false,
-        message: "USER_NOT_FOUND"
-      });
-    }
+    if (!result) return res.status(404).json({ ok: false, message: "USER_NOT_FOUND" });
 
-    return res.status(200).json({
-      ok: true,
-      user: publicUser(result)
-    });
+    return res.status(200).json({ ok: true, user: publicUser(result) });
   } catch {
-    return res.status(500).json({
-      ok: false,
-      message: "UPDATE_ME_ERROR"
-    });
+    return res.status(500).json({ ok: false, message: "UPDATE_ME_ERROR" });
   }
 });
 
@@ -189,40 +139,22 @@ router.post("/login", async (req, res) => {
     const password = String(req.body?.password || "").trim();
 
     if (!email || !password) {
-      return res.status(400).json({
-        ok: false,
-        message: "EMAIL_AND_PASSWORD_REQUIRED"
-      });
+      return res.status(400).json({ ok: false, message: "EMAIL_AND_PASSWORD_REQUIRED" });
     }
 
     const user = await usersCollection().findOne({ email });
 
-    if (!user) {
-      return res.status(401).json({
-        ok: false,
-        message: "INVALID_CREDENTIALS"
-      });
-    }
+    if (!user) return res.status(401).json({ ok: false, message: "INVALID_CREDENTIALS" });
 
     const storedPassword = String(user.password || "");
     const valid = verifyPassword(password, storedPassword);
 
-    if (!valid) {
-      return res.status(401).json({
-        ok: false,
-        message: "INVALID_CREDENTIALS"
-      });
-    }
+    if (!valid) return res.status(401).json({ ok: false, message: "INVALID_CREDENTIALS" });
 
     if (!isHashedPassword(storedPassword)) {
       await usersCollection().updateOne(
         { _id: user._id },
-        {
-          $set: {
-            password: hashPassword(password),
-            updatedAt: new Date()
-          }
-        }
+        { $set: { password: hashPassword(password), updatedAt: new Date() } }
       );
     }
 
@@ -239,10 +171,7 @@ router.post("/login", async (req, res) => {
       user: publicUser(freshUser || user)
     });
   } catch {
-    return res.status(500).json({
-      ok: false,
-      message: "LOGIN_ERROR"
-    });
+    return res.status(500).json({ ok: false, message: "LOGIN_ERROR" });
   }
 });
 
@@ -253,27 +182,21 @@ router.post("/register", async (req, res) => {
     const password = String(req.body?.password || "").trim();
     const phone = normalizePhone(req.body?.phone);
 
+    const roleRaw = String(req.body?.role || "").trim().toLowerCase();
+    const role = roleRaw === "guide" ? "guide" : "traveler";
+
     if (!name || !email || !password) {
-      return res.status(400).json({
-        ok: false,
-        message: "NAME_EMAIL_PASSWORD_REQUIRED"
-      });
+      return res.status(400).json({ ok: false, message: "NAME_EMAIL_PASSWORD_REQUIRED" });
     }
 
     if (password.length < 6) {
-      return res.status(400).json({
-        ok: false,
-        message: "PASSWORD_MIN_6"
-      });
+      return res.status(400).json({ ok: false, message: "PASSWORD_MIN_6" });
     }
 
     const exists = await usersCollection().findOne({ email });
 
     if (exists) {
-      return res.status(409).json({
-        ok: false,
-        message: "EMAIL_ALREADY_EXISTS"
-      });
+      return res.status(409).json({ ok: false, message: "EMAIL_ALREADY_EXISTS" });
     }
 
     const now = new Date();
@@ -282,7 +205,7 @@ router.post("/register", async (req, res) => {
       name,
       email,
       password: hashPassword(password),
-      role: "traveler",
+      role,
       phone,
       emailVerified: false,
       emailVerifiedAt: null,
@@ -293,7 +216,6 @@ router.post("/register", async (req, res) => {
     };
 
     const result = await usersCollection().insertOne(doc);
-
     const token = makeToken(email);
 
     return res.status(201).json({
@@ -303,7 +225,7 @@ router.post("/register", async (req, res) => {
         id: String(result.insertedId),
         name,
         email,
-        role: "traveler",
+        role,
         phone,
         emailVerified: false,
         emailVerifiedAt: null,
@@ -314,10 +236,7 @@ router.post("/register", async (req, res) => {
       }
     });
   } catch {
-    return res.status(500).json({
-      ok: false,
-      message: "REGISTER_ERROR"
-    });
+    return res.status(500).json({ ok: false, message: "REGISTER_ERROR" });
   }
 });
 
@@ -326,10 +245,7 @@ router.post("/forgot-password", async (req, res) => {
     const email = String(req.body?.email || "").trim().toLowerCase();
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        message: "EMAIL_REQUIRED"
-      });
+      return res.status(400).json({ ok: false, message: "EMAIL_REQUIRED" });
     }
 
     const user = await usersCollection().findOne(
@@ -366,10 +282,7 @@ router.post("/forgot-password", async (req, res) => {
       message: "IF_ACCOUNT_EXISTS_INSTRUCTIONS_SENT"
     });
   } catch {
-    return res.status(500).json({
-      ok: false,
-      message: "FORGOT_PASSWORD_ERROR"
-    });
+    return res.status(500).json({ ok: false, message: "FORGOT_PASSWORD_ERROR" });
   }
 });
 
@@ -386,10 +299,7 @@ router.post("/reset-password", async (req, res) => {
     }
 
     if (newPassword.length < 6) {
-      return res.status(400).json({
-        ok: false,
-        message: "PASSWORD_MIN_6"
-      });
+      return res.status(400).json({ ok: false, message: "PASSWORD_MIN_6" });
     }
 
     const resetTokenHash = hashResetToken(token);
@@ -420,15 +330,9 @@ router.post("/reset-password", async (req, res) => {
       }
     );
 
-    return res.status(200).json({
-      ok: true,
-      message: "PASSWORD_RESET_OK"
-    });
+    return res.status(200).json({ ok: true, message: "PASSWORD_RESET_OK" });
   } catch {
-    return res.status(500).json({
-      ok: false,
-      message: "RESET_PASSWORD_ERROR"
-    });
+    return res.status(500).json({ ok: false, message: "RESET_PASSWORD_ERROR" });
   }
 });
 
