@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 
 const GuideSchema = new mongoose.Schema(
   {
+    userEmail: { type: String, index: true, default: "" },
+
     name: { type: String, default: "" },
     city: { type: String, default: "" },
     rating: { type: Number, default: 0 },
