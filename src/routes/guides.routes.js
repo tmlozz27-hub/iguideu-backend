@@ -3,6 +3,19 @@ import mongoose from "mongoose";
 
 const router = express.Router();
 
+const getEmailFromToken = (authHeader) => {
+  const raw = String(authHeader || "").trim();
+  if (!raw.toLowerCase().startsWith("bearer ")) return "";
+  const token = raw.slice(7).trim();
+  if (!token.startsWith("DEV_TOKEN_")) return "";
+  const encoded = token.replace("DEV_TOKEN_", "");
+  try {
+    return Buffer.from(encoded, "base64").toString("utf8").trim().toLowerCase();
+  } catch {
+    return "";
+  }
+};
+
 function toNumber(value, fallback = null) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -41,6 +54,30 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
   return R * c;
 }
+
+router.get("/me", async (req, res) => {
+  try {
+    const db = mongoose.connection?.db;
+    if (!db) return res.status(500).json({ ok: false, error: "Mongo not connected" });
+
+    const userEmail = getEmailFromToken(req.headers.authorization);
+
+    if (!userEmail) {
+      return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+    }
+
+    const col = db.collection("guides");
+    const guide = await col.findOne({ userEmail });
+
+    if (!guide) {
+      return res.status(404).json({ ok: false, error: "GUIDE_NOT_FOUND" });
+    }
+
+    return res.json({ ok: true, item: guide });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || "guide me error" });
+  }
+});
 
 router.get("/", async (req, res) => {
   try {
