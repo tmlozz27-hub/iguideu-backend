@@ -145,4 +145,60 @@ router.get("/nearby", async (req, res) => {
   }
 });
 
+router.post("/", async (req, res) => {
+  try {
+    const db = mongoose.connection?.db;
+    if (!db) return res.status(500).json({ error: "Mongo not connected" });
+
+    const {
+      name,
+      email,
+      phone,
+      city,
+      country,
+      bio,
+      languages,
+      priceHour,
+      priceDay,
+      price24h,
+      active
+    } = req.body || {};
+
+    if (!name || !email || !city || !country) {
+      return res.status(400).json({ error: "MISSING_REQUIRED_FIELDS" });
+    }
+
+    const col = db.collection("guides");
+
+    const doc = {
+      name: String(name).trim(),
+      email: String(email).trim().toLowerCase(),
+      phone: phone ? String(phone).trim() : "",
+      city: String(city).trim(),
+      country: String(country).trim(),
+      bio: bio ? String(bio).trim() : "",
+      languages: languages ? String(languages).trim() : "",
+      priceHour: Number(priceHour) || 0,
+      priceDay: Number(priceDay) || 0,
+      price24h: Number(price24h) || 0,
+      active: active !== false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const result = await col.insertOne(doc);
+
+    return res.json({
+      ok: true,
+      insertedId: result.insertedId,
+      item: {
+        _id: result.insertedId,
+        ...doc
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e?.message || "create guide error" });
+  }
+});
+
 export default router;
