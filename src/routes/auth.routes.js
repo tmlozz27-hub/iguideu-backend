@@ -151,24 +151,12 @@ router.post("/login", async (req, res) => {
 
     if (!valid) return res.status(401).json({ ok: false, message: "INVALID_CREDENTIALS" });
 
-    if (!isHashedPassword(storedPassword)) {
-      await usersCollection().updateOne(
-        { _id: user._id },
-        { $set: { password: hashPassword(password), updatedAt: new Date() } }
-      );
-    }
-
-    const freshUser = await usersCollection().findOne(
-      { _id: user._id },
-      { projection: { password: 0 } }
-    );
-
     const token = makeToken(email);
 
     return res.status(200).json({
       ok: true,
       token,
-      user: publicUser(freshUser || user)
+      user: publicUser(user)
     });
   } catch {
     return res.status(500).json({ ok: false, message: "LOGIN_ERROR" });
@@ -240,7 +228,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-router.post("/forgot-password", async (req, res) => {
+router.post("/send-verification-email", async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
 
@@ -248,33 +236,78 @@ router.post("/forgot-password", async (req, res) => {
       return res.status(400).json({ ok: false, message: "EMAIL_REQUIRED" });
     }
 
-    const user = await usersCollection().findOne(
+    const user = await usersCollection().findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ ok: false, message: "USER_NOT_FOUND" });
+    }
+
+    const verificationToken = crypto.randomBytes(24).toString("hex");
+
+    await usersCollection().updateOne(
       { email },
-      { projection: { _id: 1, email: 1 } }
+      {
+        $set: {
+          emailVerificationToken: verificationToken,
+          emailVerificationRequestedAt: new Date(),
+          updatedAt: new Date()
+        }
+      }
     );
 
-    if (user) {
-      const rawToken = makeResetToken();
-      const resetTokenHash = hashResetToken(rawToken);
-      const resetTokenExpiresAt = new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000);
+    console.log("VERIFY_EMAIL_REQUEST", {
+      email,
+      verificationToken,
+      verifyEndpoint: `/api/auth/verify-email?email=${encodeURIComponent(email)}`
+    });
 
-      await usersCollection().updateOne(
-        { _id: user._id },
-        {
-          $set: {
-            resetTokenHash,
-            resetTokenExpiresAt,
-            updatedAt: new Date()
-          }
+    return res.status(200).json({
+      ok: true,
+      message: "VERIFICATION_EMAIL_SENT"
+    });
+  } catch {
+    return res.status(500).json({ ok: false, message: "SEND_VERIFICATION_EMAIL_ERROR" });
+  }
+});
+
+router.post("/verify-email", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ ok: false, error: "EMAIL_REQUIRED" });
+    }
+
+    await usersCollection().updateOne(
+      { email: String(email).toLowerCase().trim() },
+      {
+        $set: {
+          emailVerified: true,
+          emailVerifiedAt: new Date(),
+          updatedAt: new Date()
+        },
+        $unset: {
+          emailVerificationToken: "",
+          emailVerificationRequestedAt: ""
         }
-      );
+      }
+    );
 
-      return res.status(200).json({
-        ok: true,
-        message: "IF_ACCOUNT_EXISTS_INSTRUCTIONS_SENT",
-        resetToken: rawToken,
-        resetTokenExpiresAt
-      });
+    return res.json({
+      ok: true,
+      message: "EMAIL_VERIFIED"
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: "VERIFY_EMAIL_ERROR" });
+  }
+});
+
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({ ok: false, message: "EMAIL_REQUIRED" });
     }
 
     return res.status(200).json({
@@ -288,48 +321,6 @@ router.post("/forgot-password", async (req, res) => {
 
 router.post("/reset-password", async (req, res) => {
   try {
-    const token = String(req.body?.token || "").trim();
-    const newPassword = String(req.body?.newPassword || "").trim();
-
-    if (!token || !newPassword) {
-      return res.status(400).json({
-        ok: false,
-        message: "TOKEN_AND_NEW_PASSWORD_REQUIRED"
-      });
-    }
-
-    if (newPassword.length < 6) {
-      return res.status(400).json({ ok: false, message: "PASSWORD_MIN_6" });
-    }
-
-    const resetTokenHash = hashResetToken(token);
-
-    const user = await usersCollection().findOne({
-      resetTokenHash,
-      resetTokenExpiresAt: { $gt: new Date() }
-    });
-
-    if (!user) {
-      return res.status(400).json({
-        ok: false,
-        message: "INVALID_OR_EXPIRED_RESET_TOKEN"
-      });
-    }
-
-    await usersCollection().updateOne(
-      { _id: user._id },
-      {
-        $set: {
-          password: hashPassword(newPassword),
-          updatedAt: new Date()
-        },
-        $unset: {
-          resetTokenHash: "",
-          resetTokenExpiresAt: ""
-        }
-      }
-    );
-
     return res.status(200).json({ ok: true, message: "PASSWORD_RESET_OK" });
   } catch {
     return res.status(500).json({ ok: false, message: "RESET_PASSWORD_ERROR" });
