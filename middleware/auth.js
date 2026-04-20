@@ -1,7 +1,11 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
-const JWT_SECRET = process.env.JWT_SECRET || "changeme";
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET no definido");
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
 
 async function authRequired(req, res, next) {
   try {

@@ -13,7 +13,6 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// CORS para el frontend local
 app.use(
   cors({
     origin: [
@@ -25,15 +24,10 @@ app.use(
   })
 );
 
-// JSON por defecto (el webhook usa raw más abajo)
 app.use(express.json());
 
-// Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// ----------------------
-// Conexión a MongoDB (solo para health y futuro)
-// ----------------------
 console.log("DEBUG MONGO_URI:", process.env.MONGO_URI);
 
 mongoose
@@ -41,9 +35,6 @@ mongoose
   .then(() => console.log("✅ MongoDB OK"))
   .catch((err) => console.error("❌ MongoDB ERROR:", err.message));
 
-// ----------------------
-// /api/health
-// ----------------------
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
@@ -55,9 +46,6 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// ----------------------
-// /api/guides (MODO DEMO: guías fijas en memoria)
-// ----------------------
 app.get("/api/guides", (req, res) => {
   const guides = [
     {
@@ -101,9 +89,6 @@ app.get("/api/guides", (req, res) => {
   res.json({ ok: true, guides });
 });
 
-// ----------------------
-// Crear Checkout (NaN FIX)
-// ----------------------
 app.post("/api/payments/create-checkout", async (req, res) => {
   try {
     const { guideId, userEmail, amountUSD, amount } = req.body;
@@ -113,7 +98,7 @@ app.post("/api/payments/create-checkout", async (req, res) => {
       amountNumber = Number(amount);
     }
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      amountNumber = 10; // fallback para test
+      return res.status(400).json({ ok: false, error: "Monto inválido" });
     }
 
     const unitAmount = Math.round(amountNumber * 100);
@@ -150,9 +135,6 @@ app.post("/api/payments/create-checkout", async (req, res) => {
   }
 });
 
-// ----------------------
-// Webhook Stripe (raw body + Stripe CLI)
-// ----------------------
 app.post(
   "/api/stripe/webhook",
   express.raw({ type: "application/json" }),
@@ -181,14 +163,10 @@ app.post(
   }
 );
 
-// ----------------------
-// Servir estáticos (success / cancel)
-// ----------------------
-app.use(express.static(path.join(__dirname, "public")));
+if (process.env.NODE_ENV !== "production") {
+  app.use(express.static(path.join(__dirname, "public")));
+}
 
-// ----------------------
-// Levantar server
-// ----------------------
 const PORT = process.env.PORT || 4026;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 iguideu23 backend en http://0.0.0.0:${PORT}`);
