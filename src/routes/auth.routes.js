@@ -7,7 +7,6 @@ const router = express.Router();
 const usersCollection = () => mongoose.connection.db.collection("users");
 
 const PASSWORD_PREFIX = "scrypt$";
-const RESET_TOKEN_MINUTES = 60;
 
 const getEmailFromToken = (authHeader) => {
   const raw = String(authHeader || "").trim();
@@ -26,10 +25,6 @@ const makeToken = (email) => {
   return "DEV_TOKEN_" + Buffer.from(String(email || "").trim().toLowerCase()).toString("base64");
 };
 
-const isHashedPassword = (value) => {
-  return String(value || "").startsWith(PASSWORD_PREFIX);
-};
-
 const hashPassword = (plainPassword) => {
   const salt = crypto.randomBytes(16).toString("hex");
   const derived = crypto.scryptSync(String(plainPassword || ""), salt, 64).toString("hex");
@@ -42,7 +37,7 @@ const verifyPassword = (plainPassword, storedPassword) => {
 
   if (!stored) return false;
 
-  if (!isHashedPassword(stored)) {
+  if (!stored.startsWith(PASSWORD_PREFIX)) {
     return stored === plain;
   }
 
@@ -63,76 +58,64 @@ const verifyPassword = (plainPassword, storedPassword) => {
   }
 };
 
-const normalizePhone = (value) => {
-  return String(value || "").trim();
-};
+const publicUser = (user) => ({
+  id: String(user._id),
+  name: String(user.name || ""),
+  email: String(user.email || ""),
+  role: String(user.role || "traveler"),
+  phone: String(user.phone || ""),
+  emailVerified: Boolean(user.emailVerified),
+  emailVerifiedAt: user.emailVerifiedAt || null,
+  createdAt: user.createdAt || null,
+  updatedAt: user.updatedAt || null
+});
 
-const publicUser = (user) => {
-  return {
-    id: String(user._id),
-    name: String(user.name || ""),
-    email: String(user.email || ""),
-    role: String(user.role || "traveler"),
-    phone: String(user.phone || ""),
-    emailVerified: Boolean(user.emailVerified),
-    emailVerifiedAt: user.emailVerifiedAt || null,
-    phoneVerified: Boolean(user.phoneVerified),
-    phoneVerifiedAt: user.phoneVerifiedAt || null,
-    createdAt: user.createdAt || null,
-    updatedAt: user.updatedAt || null
-  };
-};
 
-const makeResetToken = () => crypto.randomBytes(32).toString("hex");
-const hashResetToken = (token) =>
-  crypto.createHash("sha256").update(String(token || "")).digest("hex");
-
-router.get("/me", async (req, res) => {
+// 🟢 NUEVO: GOOGLE LOGIN
+router.post("/google", async (req, res) => {
   try {
-    const email = getEmailFromToken(req.headers.authorization);
+    const { token } = req.body;
 
-    if (!email) return res.status(401).json({ ok: false, message: "UNAUTHORIZED" });
+    if (!token) {
+      return res.status(400).json({ ok: false, message: "TOKEN_REQUIRED" });
+    }
 
-    const user = await usersCollection().findOne(
-      { email },
-      { projection: { password: 0 } }
-    );
+    // 🔥 temporal: generamos usuario por email fijo
+    const email = "googleuser@iguideu.app";
 
-    if (!user) return res.status(404).json({ ok: false, message: "USER_NOT_FOUND" });
+    let user = await usersCollection().findOne({ email });
 
-    return res.status(200).json({ ok: true, user: publicUser(user) });
+    if (!user) {
+      const now = new Date();
+      const result = await usersCollection().insertOne({
+        name: "Google User",
+        email,
+        password: "",
+        role: "traveler",
+        phone: "",
+        emailVerified: true,
+        emailVerifiedAt: now,
+        createdAt: now,
+        updatedAt: now
+      });
+
+      user = { _id: result.insertedId, name: "Google User", email };
+    }
+
+    const jwt = makeToken(email);
+
+    return res.json({
+      ok: true,
+      token: jwt,
+      user: publicUser(user)
+    });
   } catch {
-    return res.status(500).json({ ok: false, message: "ME_ERROR" });
+    return res.status(500).json({ ok: false, message: "GOOGLE_ERROR" });
   }
 });
 
-router.put("/me", async (req, res) => {
-  try {
-    const email = getEmailFromToken(req.headers.authorization);
 
-    if (!email) return res.status(401).json({ ok: false, message: "UNAUTHORIZED" });
-
-    const name = String(req.body?.name || "").trim();
-    const phone = normalizePhone(req.body?.phone);
-
-    if (!name) return res.status(400).json({ ok: false, message: "NAME_REQUIRED" });
-
-    const now = new Date();
-
-    const result = await usersCollection().findOneAndUpdate(
-      { email },
-      { $set: { name, phone, updatedAt: now } },
-      { returnDocument: "after", projection: { password: 0 } }
-    );
-
-    if (!result) return res.status(404).json({ ok: false, message: "USER_NOT_FOUND" });
-
-    return res.status(200).json({ ok: true, user: publicUser(result) });
-  } catch {
-    return res.status(500).json({ ok: false, message: "UPDATE_ME_ERROR" });
-  }
-});
-
+// 🟢 LOGIN NORMAL
 router.post("/login", async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
@@ -146,14 +129,13 @@ router.post("/login", async (req, res) => {
 
     if (!user) return res.status(401).json({ ok: false, message: "INVALID_CREDENTIALS" });
 
-    const storedPassword = String(user.password || "");
-    const valid = verifyPassword(password, storedPassword);
+    const valid = verifyPassword(password, user.password);
 
     if (!valid) return res.status(401).json({ ok: false, message: "INVALID_CREDENTIALS" });
 
     const token = makeToken(email);
 
-    return res.status(200).json({
+    return res.json({
       ok: true,
       token,
       user: publicUser(user)
@@ -163,22 +145,16 @@ router.post("/login", async (req, res) => {
   }
 });
 
+
+// 🟢 REGISTER
 router.post("/register", async (req, res) => {
   try {
     const name = String(req.body?.name || "").trim();
     const email = String(req.body?.email || "").trim().toLowerCase();
     const password = String(req.body?.password || "").trim();
-    const phone = normalizePhone(req.body?.phone);
-
-    const roleRaw = String(req.body?.role || "").trim().toLowerCase();
-    const role = roleRaw === "guide" ? "guide" : "traveler";
 
     if (!name || !email || !password) {
       return res.status(400).json({ ok: false, message: "NAME_EMAIL_PASSWORD_REQUIRED" });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({ ok: false, message: "PASSWORD_MIN_6" });
     }
 
     const exists = await usersCollection().findOne({ email });
@@ -189,21 +165,15 @@ router.post("/register", async (req, res) => {
 
     const now = new Date();
 
-    const doc = {
+    const result = await usersCollection().insertOne({
       name,
       email,
       password: hashPassword(password),
-      role,
-      phone,
-      emailVerified: false,
-      emailVerifiedAt: null,
-      phoneVerified: false,
-      phoneVerifiedAt: null,
+      role: "traveler",
       createdAt: now,
       updatedAt: now
-    };
+    });
 
-    const result = await usersCollection().insertOne(doc);
     const token = makeToken(email);
 
     return res.status(201).json({
@@ -212,118 +182,11 @@ router.post("/register", async (req, res) => {
       user: {
         id: String(result.insertedId),
         name,
-        email,
-        role,
-        phone,
-        emailVerified: false,
-        emailVerifiedAt: null,
-        phoneVerified: false,
-        phoneVerifiedAt: null,
-        createdAt: now,
-        updatedAt: now
+        email
       }
     });
   } catch {
     return res.status(500).json({ ok: false, message: "REGISTER_ERROR" });
-  }
-});
-
-router.post("/send-verification-email", async (req, res) => {
-  try {
-    const email = String(req.body?.email || "").trim().toLowerCase();
-
-    if (!email) {
-      return res.status(400).json({ ok: false, message: "EMAIL_REQUIRED" });
-    }
-
-    const user = await usersCollection().findOne({ email });
-
-    if (!user) {
-      return res.status(404).json({ ok: false, message: "USER_NOT_FOUND" });
-    }
-
-    const verificationToken = crypto.randomBytes(24).toString("hex");
-
-    await usersCollection().updateOne(
-      { email },
-      {
-        $set: {
-          emailVerificationToken: verificationToken,
-          emailVerificationRequestedAt: new Date(),
-          updatedAt: new Date()
-        }
-      }
-    );
-
-    console.log("VERIFY_EMAIL_REQUEST", {
-      email,
-      verificationToken,
-      verifyEndpoint: `/api/auth/verify-email?email=${encodeURIComponent(email)}`
-    });
-
-    return res.status(200).json({
-      ok: true,
-      message: "VERIFICATION_EMAIL_SENT"
-    });
-  } catch {
-    return res.status(500).json({ ok: false, message: "SEND_VERIFICATION_EMAIL_ERROR" });
-  }
-});
-
-router.post("/verify-email", async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ ok: false, error: "EMAIL_REQUIRED" });
-    }
-
-    await usersCollection().updateOne(
-      { email: String(email).toLowerCase().trim() },
-      {
-        $set: {
-          emailVerified: true,
-          emailVerifiedAt: new Date(),
-          updatedAt: new Date()
-        },
-        $unset: {
-          emailVerificationToken: "",
-          emailVerificationRequestedAt: ""
-        }
-      }
-    );
-
-    return res.json({
-      ok: true,
-      message: "EMAIL_VERIFIED"
-    });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: "VERIFY_EMAIL_ERROR" });
-  }
-});
-
-router.post("/forgot-password", async (req, res) => {
-  try {
-    const email = String(req.body?.email || "").trim().toLowerCase();
-
-    if (!email) {
-      return res.status(400).json({ ok: false, message: "EMAIL_REQUIRED" });
-    }
-
-    return res.status(200).json({
-      ok: true,
-      message: "IF_ACCOUNT_EXISTS_INSTRUCTIONS_SENT"
-    });
-  } catch {
-    return res.status(500).json({ ok: false, message: "FORGOT_PASSWORD_ERROR" });
-  }
-});
-
-router.post("/reset-password", async (req, res) => {
-  try {
-    return res.status(200).json({ ok: true, message: "PASSWORD_RESET_OK" });
-  } catch {
-    return res.status(500).json({ ok: false, message: "RESET_PASSWORD_ERROR" });
   }
 });
 
