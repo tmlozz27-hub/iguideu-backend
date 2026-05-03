@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const router = express.Router();
 
@@ -78,6 +79,27 @@ const publicUser = (user) => ({
   createdAt: user?.createdAt || null,
   updatedAt: user?.updatedAt || null
 });
+
+const APPLE_JWKS = createRemoteJWKSet(
+  new URL("https://appleid.apple.com/auth/keys")
+);
+
+async function verifyAppleIdentityToken(identityToken) {
+  const { payload } = await jwtVerify(identityToken, APPLE_JWKS, {
+    issuer: "https://appleid.apple.com",
+    audience: "com.auroragalactic.iguideu"
+  });
+  return payload;
+}
+
+function normalizeFullName(fullName) {
+  if (fullName == null) return "";
+  if (typeof fullName === "string") return String(fullName).trim();
+  if (typeof fullName === "object") {
+    return `${fullName.givenName || ""} ${fullName.familyName || ""}`.trim();
+  }
+  return "";
+}
 
 router.post("/google", async (req, res) => {
   try {
@@ -187,6 +209,72 @@ router.put("/me", async (req, res) => {
     });
   } catch {
     return res.status(500).json({ ok: false, message: "UPDATE_ERROR" });
+  }
+});
+
+router.post("/apple", async (req, res) => {
+  try {
+    const identityToken = req.body?.identityToken;
+    const bodyEmail = req.body?.email;
+    const fullName = req.body?.fullName;
+
+    if (!identityToken) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "APPLE_IDENTITY_TOKEN_REQUIRED" });
+    }
+
+    const decoded = await verifyAppleIdentityToken(identityToken);
+    const email = String(decoded.email || bodyEmail || "")
+      .trim()
+      .toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({ ok: false, message: "APPLE_EMAIL_REQUIRED" });
+    }
+
+    let user = await usersCollection().findOne({ email });
+
+    if (!user) {
+      const now = new Date();
+      const nameFromBody = normalizeFullName(fullName);
+      const name = nameFromBody || email;
+
+      const result = await usersCollection().insertOne({
+        name,
+        email,
+        password: "",
+        role: "traveler",
+        phone: "",
+        emailVerified: true,
+        emailVerifiedAt: now,
+        createdAt: now,
+        updatedAt: now
+      });
+
+      user = {
+        _id: result.insertedId,
+        name,
+        email,
+        password: "",
+        role: "traveler",
+        phone: "",
+        emailVerified: true,
+        emailVerifiedAt: now,
+        createdAt: now,
+        updatedAt: now
+      };
+    }
+
+    const token = makeToken(email);
+
+    return res.json({
+      ok: true,
+      token,
+      user: publicUser(user)
+    });
+  } catch {
+    return res.status(401).json({ ok: false, message: "APPLE_INVALID_TOKEN" });
   }
 });
 
