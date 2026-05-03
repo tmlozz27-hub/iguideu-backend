@@ -4,15 +4,13 @@ const jwt = require("jsonwebtoken");
 
 router.post("/google", async (req, res) => {
   try {
-    const { token } = req.body;
+    const { token, email, name } = req.body;
 
-    if (!token) {
-      return res.status(400).json({ error: "Token requerido" });
+    if (!email) {
+      return res.status(400).json({ error: "Email requerido" });
     }
 
-    // 🔥 TEMPORAL: login directo (NO rompe nada existente)
-    const email = "googleuser@iguideu.app";
-
+    // 🔥 USAMOS EMAIL REAL DE GOOGLE
     const jwtToken = jwt.sign(
       { email },
       process.env.JWT_SECRET || "secret",
@@ -22,6 +20,7 @@ router.post("/google", async (req, res) => {
     return res.json({
       token: jwtToken,
       email,
+      name: name || "",
     });
   } catch (err) {
     return res.status(500).json({ error: "Error Google login" });
