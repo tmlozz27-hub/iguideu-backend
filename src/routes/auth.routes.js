@@ -59,36 +59,46 @@ const verifyPassword = (plainPassword, storedPassword) => {
 };
 
 const publicUser = (user) => ({
-  id: String(user._id),
-  name: String(user.name || ""),
-  email: String(user.email || ""),
-  role: String(user.role || "traveler"),
-  phone: String(user.phone || ""),
-  emailVerified: Boolean(user.emailVerified),
-  emailVerifiedAt: user.emailVerifiedAt || null,
-  createdAt: user.createdAt || null,
-  updatedAt: user.updatedAt || null
+  id: String(user?._id || ""),
+  name: String(user?.name || ""),
+  email: String(user?.email || ""),
+  role: String(user?.role || "traveler"),
+  phone: String(user?.phone || ""),
+  lastName: String(user?.lastName || ""),
+  country: String(user?.country || ""),
+  city: String(user?.city || ""),
+  language: String(user?.language || ""),
+  travelStyle: String(user?.travelStyle || ""),
+  interests: String(user?.interests || ""),
+  about: String(user?.about || ""),
+  bio: String(user?.bio || ""),
+  photo: String(user?.photo || ""),
+  emailVerified: Boolean(user?.emailVerified),
+  emailVerifiedAt: user?.emailVerifiedAt || null,
+  createdAt: user?.createdAt || null,
+  updatedAt: user?.updatedAt || null
 });
 
-
-// 🟢 NUEVO: GOOGLE LOGIN
 router.post("/google", async (req, res) => {
   try {
-    const { token } = req.body;
+    const token = String(req.body?.token || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const name = String(req.body?.name || "Google User").trim();
 
     if (!token) {
       return res.status(400).json({ ok: false, message: "TOKEN_REQUIRED" });
     }
 
-    // 🔥 temporal: generamos usuario por email fijo
-    const email = "googleuser@iguideu.app";
+    if (!email) {
+      return res.status(400).json({ ok: false, message: "EMAIL_REQUIRED" });
+    }
 
     let user = await usersCollection().findOne({ email });
 
     if (!user) {
       const now = new Date();
       const result = await usersCollection().insertOne({
-        name: "Google User",
+        name,
         email,
         password: "",
         role: "traveler",
@@ -99,7 +109,18 @@ router.post("/google", async (req, res) => {
         updatedAt: now
       });
 
-      user = { _id: result.insertedId, name: "Google User", email };
+      user = {
+        _id: result.insertedId,
+        name,
+        email,
+        password: "",
+        role: "traveler",
+        phone: "",
+        emailVerified: true,
+        emailVerifiedAt: now,
+        createdAt: now,
+        updatedAt: now
+      };
     }
 
     const jwt = makeToken(email);
@@ -114,8 +135,68 @@ router.post("/google", async (req, res) => {
   }
 });
 
+router.get("/me", async (req, res) => {
+  try {
+    const email = getEmailFromToken(req.headers.authorization);
 
-// 🟢 LOGIN NORMAL
+    if (!email) {
+      return res.status(401).json({ ok: false, message: "AUTH_REQUIRED" });
+    }
+
+    const user = await usersCollection().findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ ok: false, message: "USER_NOT_FOUND" });
+    }
+
+    return res.json({
+      ok: true,
+      user: publicUser(user)
+    });
+  } catch {
+    return res.status(500).json({ ok: false, message: "ME_ERROR" });
+  }
+});
+
+router.put("/me", async (req, res) => {
+  try {
+    const email = getEmailFromToken(req.headers.authorization);
+
+    if (!email) {
+      return res.status(401).json({ ok: false, message: "AUTH_REQUIRED" });
+    }
+
+    const update = {
+      name: String(req.body?.name || "").trim(),
+      lastName: String(req.body?.lastName || "").trim(),
+      country: String(req.body?.country || "").trim(),
+      city: String(req.body?.city || "").trim(),
+      language: String(req.body?.language || "").trim(),
+      phone: String(req.body?.phone || "").trim(),
+      travelStyle: String(req.body?.travelStyle || "").trim(),
+      interests: String(req.body?.interests || "").trim(),
+      about: String(req.body?.about || "").trim(),
+      bio: String(req.body?.about || req.body?.bio || "").trim(),
+      photo: String(req.body?.photo || "").trim(),
+      updatedAt: new Date()
+    };
+
+    await usersCollection().updateOne(
+      { email },
+      { $set: update }
+    );
+
+    const user = await usersCollection().findOne({ email });
+
+    return res.json({
+      ok: true,
+      user: publicUser(user)
+    });
+  } catch {
+    return res.status(500).json({ ok: false, message: "UPDATE_ERROR" });
+  }
+});
+
 router.post("/login", async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
@@ -145,8 +226,6 @@ router.post("/login", async (req, res) => {
   }
 });
 
-
-// 🟢 REGISTER
 router.post("/register", async (req, res) => {
   try {
     const name = String(req.body?.name || "").trim();
@@ -182,7 +261,8 @@ router.post("/register", async (req, res) => {
       user: {
         id: String(result.insertedId),
         name,
-        email
+        email,
+        role: "traveler"
       }
     });
   } catch {
