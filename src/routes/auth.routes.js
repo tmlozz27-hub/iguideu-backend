@@ -112,14 +112,7 @@ router.post("/google", async (req, res) => {
       user = {
         _id: result.insertedId,
         name,
-        email,
-        password: "",
-        role: "traveler",
-        phone: "",
-        emailVerified: true,
-        emailVerifiedAt: now,
-        createdAt: now,
-        updatedAt: now
+        email
       };
     }
 
