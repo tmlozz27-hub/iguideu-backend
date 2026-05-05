@@ -122,6 +122,42 @@ router.post("/", requireAuth, async (req, res) => {
   }
 })
 
+router.post("/:id/cancel", requireAuth, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim()
+    const email = authEmail(req)
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" })
+    }
+
+    const booking = await Booking.findById(id)
+
+    if (!booking) {
+      return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" })
+    }
+
+    const bookingTravelerEmail = String(booking.travelerEmail || "").trim().toLowerCase()
+
+    if (bookingTravelerEmail !== email) {
+      return res.status(403).json({ ok: false, error: "FORBIDDEN_BOOKING" })
+    }
+
+    if (booking.status === "CANCELLED") {
+      return res.status(400).json({ ok: false, error: "BOOKING_ALREADY_CANCELLED" })
+    }
+
+    booking.status = "CANCELLED"
+    booking.cancelledAt = new Date()
+
+    await booking.save()
+
+    return res.status(200).json({ ok: true, booking })
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: "BOOKING_CANCEL_FAILED", detail: err?.message || "Internal Server Error" })
+  }
+})
+
 router.get("/:id", requireAuth, async (_req, res) => {
   return res.status(403).json({
     ok: false,
