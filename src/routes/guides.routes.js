@@ -276,7 +276,9 @@ router.post("/", async (req, res) => {
       password
     } = req.body || {};
 
-    if (!name || !email || !city || !country || !password) {
+    const cleanPassword = String(password || "").trim();
+
+    if (!name || !email || !city || !country || !cleanPassword) {
       return res.status(400).json({
         error: "MISSING_REQUIRED_FIELDS"
       });
@@ -304,7 +306,7 @@ router.post("/", async (req, res) => {
     await usersCol.insertOne({
       name: String(name).trim(),
       email: cleanEmail,
-      password: hashPassword(password),
+      password: hashPassword(cleanPassword),
       role: "guide",
       phone: phone ? String(phone).trim() : "",
       city: city ? String(city).trim() : "",
