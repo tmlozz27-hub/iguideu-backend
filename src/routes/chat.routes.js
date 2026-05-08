@@ -26,6 +26,48 @@ async function loadBookingOrNull(bookingId) {
   return db.collection("bookings").findOne({ _id: new mongoose.Types.ObjectId(bookingId) })
 }
 
+async function loadGuideByBookingGuideId(guideId) {
+  const rawGuideId = toSafeString(guideId)
+  if (!rawGuideId) return null
+
+  const db = mongoose.connection?.db
+  if (!db) return null
+
+  const guides = db.collection("guides")
+
+  if (mongoose.Types.ObjectId.isValid(rawGuideId)) {
+    const byObjectId = await guides.findOne({ _id: new mongoose.Types.ObjectId(rawGuideId) })
+    if (byObjectId) return byObjectId
+  }
+
+  return guides.findOne({ guideId: rawGuideId })
+}
+
+async function resolveChatActor(req, booking) {
+  const currentUserEmail = authEmail(req)
+  if (!currentUserEmail) {
+    return { ok: false, status: 401, error: "UNAUTHORIZED" }
+  }
+
+  const bookingTravelerEmail = String(booking?.travelerEmail || "").trim().toLowerCase()
+  if (!bookingTravelerEmail) {
+    return { ok: false, status: 400, error: "BOOKING_TRAVELER_EMAIL_MISSING" }
+  }
+
+  if (bookingTravelerEmail === currentUserEmail) {
+    return { ok: true, actorType: "traveler", currentUserEmail }
+  }
+
+  const guide = await loadGuideByBookingGuideId(booking?.guideId)
+  const bookingGuideEmail = String(guide?.email || "").trim().toLowerCase()
+
+  if (bookingGuideEmail && bookingGuideEmail === currentUserEmail) {
+    return { ok: true, actorType: "guide", currentUserEmail }
+  }
+
+  return { ok: false, status: 403, error: "FORBIDDEN_BOOKING" }
+}
+
 router.get("/health", (req, res) => {
   return res.status(200).json({ ok: true })
 })
@@ -34,14 +76,6 @@ router.get("/messages", requireAuth, async (req, res) => {
   try {
     const bookingId = toSafeString(req.query.bookingId)
     const limit = toSafeLimit(req.query.limit, 200)
-    const currentUserEmail = authEmail(req)
-
-    if (!currentUserEmail) {
-      return res.status(401).json({
-        ok: false,
-        error: "UNAUTHORIZED"
-      })
-    }
 
     if (!bookingId) {
       return res.status(400).json({
@@ -59,19 +93,11 @@ router.get("/messages", requireAuth, async (req, res) => {
       })
     }
 
-    const bookingTravelerEmail = String(booking.travelerEmail || "").trim().toLowerCase()
-
-    if (!bookingTravelerEmail) {
-      return res.status(400).json({
+    const actor = await resolveChatActor(req, booking)
+    if (!actor.ok) {
+      return res.status(actor.status).json({
         ok: false,
-        error: "BOOKING_TRAVELER_EMAIL_MISSING"
-      })
-    }
-
-    if (bookingTravelerEmail !== currentUserEmail) {
-      return res.status(403).json({
-        ok: false,
-        error: "FORBIDDEN_BOOKING"
+        error: actor.error
       })
     }
 
@@ -96,13 +122,7 @@ router.post("/messages", requireAuth, async (req, res) => {
   try {
     const bookingId = toSafeString(req.body?.bookingId)
     const senderId = toSafeString(req.body?.senderId)
-    const senderType = toSafeString(req.body?.senderType)
     const text = toSafeString(req.body?.text)
-    const currentUserEmail = authEmail(req)
-
-    if (!currentUserEmail) {
-      return res.status(401).json({ ok: false, error: "UNAUTHORIZED" })
-    }
 
     if (!bookingId) {
       return res.status(400).json({ ok: false, error: "bookingId required" })
@@ -114,22 +134,13 @@ router.post("/messages", requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" })
     }
 
-    const bookingTravelerEmail = String(booking.travelerEmail || "").trim().toLowerCase()
-
-    if (!bookingTravelerEmail) {
-      return res.status(400).json({ ok: false, error: "BOOKING_TRAVELER_EMAIL_MISSING" })
-    }
-
-    if (bookingTravelerEmail !== currentUserEmail) {
-      return res.status(403).json({ ok: false, error: "FORBIDDEN_BOOKING" })
+    const actor = await resolveChatActor(req, booking)
+    if (!actor.ok) {
+      return res.status(actor.status).json({ ok: false, error: actor.error })
     }
 
     if (!senderId) {
       return res.status(400).json({ ok: false, error: "senderId required" })
-    }
-
-    if (!senderType) {
-      return res.status(400).json({ ok: false, error: "senderType required" })
     }
 
     if (!text) {
@@ -143,7 +154,7 @@ router.post("/messages", requireAuth, async (req, res) => {
     const created = await ChatMessage.create({
       bookingId,
       senderId,
-      senderType,
+      senderType: actor.actorType,
       text,
       type: "text"
     })

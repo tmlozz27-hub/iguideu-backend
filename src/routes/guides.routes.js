@@ -253,6 +253,17 @@ router.get("/nearby", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
+    const createSecret = String(process.env.GUIDE_CREATE_SECRET || "").trim();
+    const headerSecret = String(req.headers["x-guide-create-secret"] || "").trim();
+
+    if (!createSecret) {
+      return res.status(503).json({ ok: false, message: "GUIDE_CREATE_DISABLED" });
+    }
+
+    if (!headerSecret || headerSecret !== createSecret) {
+      return res.status(403).json({ ok: false, message: "GUIDE_CREATE_FORBIDDEN" });
+    }
+
     const db = mongoose.connection?.db;
 
     if (!db) {

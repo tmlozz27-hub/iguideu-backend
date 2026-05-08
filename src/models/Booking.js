@@ -21,6 +21,7 @@ const BookingSchema = new mongoose.Schema(
     total: { type: Number, default: 0 },
     totalAmount: { type: Number, default: 0 },
     amount: { type: Number, default: 0 },
+    amountUsd: { type: Number, default: 0 },
 
     amountCents: { type: Number, default: 0 },
     totalCents: { type: Number, default: 0 },
@@ -34,7 +35,12 @@ const BookingSchema = new mongoose.Schema(
     },
 
     stripePaymentIntentId: { type: String, default: "", index: true },
+    paymentMode: { type: String, default: "" },
+    paymentStatus: { type: String, default: "" },
     paidAt: { type: Date, default: null },
+    cancelledAt: { type: Date, default: null },
+    membershipTrackedAt: { type: Date, default: null },
+    membershipTrackedFrom: { type: String, default: "" },
   },
   { timestamps: true }
 )

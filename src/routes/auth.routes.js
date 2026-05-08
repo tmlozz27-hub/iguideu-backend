@@ -2,25 +2,14 @@ import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { getAuthUserFromRequest } from "../lib/auth-user.js";
+import { isGoogleLegacyFallbackEnabled, verifyGoogleIdToken } from "../lib/google-auth.js";
 
 const router = express.Router();
 
 const usersCollection = () => mongoose.connection.db.collection("users");
 
 const PASSWORD_PREFIX = "scrypt$";
-
-const getEmailFromToken = (authHeader) => {
-  const raw = String(authHeader || "").trim();
-  if (!raw.toLowerCase().startsWith("bearer ")) return "";
-  const token = raw.slice(7).trim();
-  if (!token.startsWith("DEV_TOKEN_")) return "";
-  const encoded = token.replace("DEV_TOKEN_", "");
-  try {
-    return Buffer.from(encoded, "base64").toString("utf8").trim().toLowerCase();
-  } catch {
-    return "";
-  }
-};
 
 const makeToken = (email) => {
   return "DEV_TOKEN_" + Buffer.from(String(email || "").trim().toLowerCase()).toString("base64");
@@ -103,16 +92,37 @@ function normalizeFullName(fullName) {
 
 router.post("/google", async (req, res) => {
   try {
-    const token = String(req.body?.token || "").trim();
-    const email = String(req.body?.email || "").trim().toLowerCase();
-    const name = String(req.body?.name || "Google User").trim();
+    const token = String(req.body?.token || req.body?.idToken || "").trim();
+    const legacyEmail = String(req.body?.email || "").trim().toLowerCase();
+    const legacyName = String(req.body?.name || "Google User").trim();
 
     if (!token) {
       return res.status(400).json({ ok: false, message: "TOKEN_REQUIRED" });
     }
 
-    if (!email) {
-      return res.status(400).json({ ok: false, message: "EMAIL_REQUIRED" });
+    const verified = await verifyGoogleIdToken(token);
+    const allowLegacyFallback = isGoogleLegacyFallbackEnabled();
+
+    let email = "";
+    let name = "";
+
+    if (verified.ok) {
+      email = verified.claims.email;
+      name = verified.claims.name || legacyName || "Google User";
+    } else if (allowLegacyFallback) {
+      if (!legacyEmail) {
+        return res.status(400).json({ ok: false, message: "EMAIL_REQUIRED" });
+      }
+
+      email = legacyEmail;
+      name = legacyName || "Google User";
+      console.log(
+        "[auth/google] legacy fallback enabled; verify failed:",
+        verified.reason,
+        verified.detail || ""
+      );
+    } else {
+      return res.status(401).json({ ok: false, message: "GOOGLE_INVALID_TOKEN" });
     }
 
     let user = await usersCollection().findOne({ email });
@@ -152,11 +162,12 @@ router.post("/google", async (req, res) => {
 
 router.get("/me", async (req, res) => {
   try {
-    const email = getEmailFromToken(req.headers.authorization);
+    const auth = getAuthUserFromRequest(req);
 
-    if (!email) {
+    if (!auth.ok) {
       return res.status(401).json({ ok: false, message: "AUTH_REQUIRED" });
     }
+    const email = String(auth.user?.email || "").trim().toLowerCase();
 
     const user = await usersCollection().findOne({ email });
 
@@ -175,11 +186,12 @@ router.get("/me", async (req, res) => {
 
 router.put("/me", async (req, res) => {
   try {
-    const email = getEmailFromToken(req.headers.authorization);
+    const auth = getAuthUserFromRequest(req);
 
-    if (!email) {
+    if (!auth.ok) {
       return res.status(401).json({ ok: false, message: "AUTH_REQUIRED" });
     }
+    const email = String(auth.user?.email || "").trim().toLowerCase();
 
     const update = {
       name: String(req.body?.name || "").trim(),
