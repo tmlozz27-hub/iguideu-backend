@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -15,26 +16,9 @@ const hashPassword = (plainPassword) => {
   return `${PASSWORD_PREFIX}${salt}$${derived}`;
 };
 
-const getEmailFromToken = (authHeader) => {
-  const raw = String(authHeader || "").trim();
-
-  if (!raw.toLowerCase().startsWith("bearer ")) return "";
-
-  const token = raw.slice(7).trim();
-
-  if (!token.startsWith("DEV_TOKEN_")) return "";
-
-  const encoded = token.replace("DEV_TOKEN_", "");
-
-  try {
-    return Buffer.from(encoded, "base64")
-      .toString("utf8")
-      .trim()
-      .toLowerCase();
-  } catch {
-    return "";
-  }
-};
+function authEmail(req) {
+  return String(req.user?.email || "").trim().toLowerCase();
+}
 
 function toNumber(value, fallback = null) {
   const n = Number(value);
@@ -82,7 +66,7 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
-router.get("/me", async (req, res) => {
+router.get("/me", requireAuth, async (req, res) => {
   try {
     const db = mongoose.connection?.db;
 
@@ -92,7 +76,7 @@ router.get("/me", async (req, res) => {
         .json({ ok: false, error: "Mongo not connected" });
     }
 
-    const userEmail = getEmailFromToken(req.headers.authorization);
+    const userEmail = authEmail(req);
 
     if (!userEmail) {
       return res.status(401).json({
@@ -125,6 +109,96 @@ router.get("/me", async (req, res) => {
     });
   }
 });
+
+async function updateGuideMe(req, res) {
+  try {
+    const db = mongoose.connection?.db;
+
+    if (!db) {
+      return res.status(500).json({ ok: false, error: "Mongo not connected" });
+    }
+
+    const userEmail = authEmail(req);
+
+    if (!userEmail) {
+      return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+    }
+
+    const guidesCol = db.collection("guides");
+    const usersCol = db.collection("users");
+
+    const guide = await guidesCol.findOne({ email: userEmail });
+
+    if (!guide) {
+      return res.status(404).json({ ok: false, error: "GUIDE_NOT_FOUND" });
+    }
+
+    const b = req.body || {};
+    const set = {};
+    const now = new Date();
+
+    if (b.name !== undefined) set.name = String(b.name || "").trim();
+    if (b.phone !== undefined) set.phone = String(b.phone || "").trim();
+    if (b.city !== undefined) set.city = String(b.city || "").trim();
+    if (b.country !== undefined) set.country = String(b.country || "").trim();
+    if (b.bio !== undefined) set.bio = String(b.bio || "").trim();
+    if (b.languages !== undefined) set.languages = String(b.languages || "").trim();
+    if (b.photo !== undefined) set.photo = String(b.photo || "").trim();
+    if (b.mediaDraft !== undefined) set.mediaDraft = b.mediaDraft;
+
+    if (b.priceHour !== undefined) {
+      const n = Number(b.priceHour);
+      if (Number.isFinite(n)) set.priceHour = n;
+    }
+    if (b.priceDay !== undefined) {
+      const n = Number(b.priceDay);
+      if (Number.isFinite(n)) set.priceDay = n;
+    }
+    if (b.price24h !== undefined) {
+      const n = Number(b.price24h);
+      if (Number.isFinite(n)) set.price24h = n;
+    }
+
+    if (b.active !== undefined) {
+      set.active = Boolean(b.active);
+    }
+
+    const pwd = String(b.password ?? "").trim();
+    let passwordUpdated = false;
+
+    if (pwd) {
+      await usersCol.updateOne(
+        { email: userEmail },
+        { $set: { password: hashPassword(pwd), updatedAt: now } }
+      );
+      passwordUpdated = true;
+    }
+
+    if (Object.keys(set).length === 0 && !passwordUpdated) {
+      return res.status(400).json({ ok: false, error: "NO_FIELDS_TO_UPDATE" });
+    }
+
+    if (Object.keys(set).length > 0) {
+      set.updatedAt = now;
+      await guidesCol.updateOne({ email: userEmail }, { $set: set });
+    }
+
+    const updated = await guidesCol.findOne({ email: userEmail });
+
+    return res.json({
+      ok: true,
+      item: updated
+    });
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: e?.message || "guide update error"
+    });
+  }
+}
+
+router.patch("/me", requireAuth, updateGuideMe);
+router.put("/me", requireAuth, updateGuideMe);
 
 router.get("/", async (req, res) => {
   try {
