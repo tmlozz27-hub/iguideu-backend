@@ -142,6 +142,10 @@ router.post("/", requireAuth, async (req, res) => {
     const travelerName = String(b.travelerName || "")
     const travelerEmail = authEmail(req)
     const guideId = String(b.guideId || b.guide || "").trim()
+    const guideName = String(b.guideName ?? "").trim()
+    const guideEmail = String(b.guideEmail ?? "").trim()
+    const city = String(b.city ?? "").trim()
+    const country = String(b.country ?? "").trim()
     const date = String(b.date || b.startDate || "").trim()
     const hours = toNumber(b.hours ?? b.durationHours ?? b.duration ?? 0, 0)
     const currency = String(b.currency || "usd").trim().toLowerCase()
@@ -172,6 +176,10 @@ router.post("/", requireAuth, async (req, res) => {
       travelerName,
       travelerEmail,
       guideId,
+      guideName,
+      guideEmail,
+      city,
+      country,
       date,
       hours,
       currency,

@@ -7,6 +7,7 @@ const BookingSchema = new mongoose.Schema(
 
     guideId: { type: String, default: "" },
     guideName: { type: String, default: "" },
+    guideEmail: { type: String, default: "" },
 
     city: { type: String, default: "" },
     country: { type: String, default: "" },
