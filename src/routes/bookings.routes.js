@@ -101,18 +101,32 @@ router.get("/guide/me", requireAuth, async (req, res) => {
       guideIds.add(legacyGuideId)
     }
 
-    const q = { guideId: { $in: [...guideIds] } }
+    const normalizedGuideEmail = String(guide.email || email || "")
+      .trim()
+      .toLowerCase()
+
+    const guideMatchOr = [{ guideId: { $in: [...guideIds] } }]
+
+    if (normalizedGuideEmail) {
+      const escaped = normalizedGuideEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      const emailRegex = new RegExp(`^${escaped}$`, "i")
+      guideMatchOr.push({ guideEmail: emailRegex })
+      guideMatchOr.push({ email: emailRegex })
+    }
 
     const rawStatus = req.query?.status
     const statusStr = rawStatus === undefined || rawStatus === null ? "" : String(rawStatus).trim()
 
-    if (statusStr === "") {
-      q.status = "PAID"
-    } else {
-      const upper = statusStr.toUpperCase()
-      if (upper !== "ALL") {
-        q.status = upper
+    const upper = statusStr === "" ? "PAID" : statusStr.toUpperCase()
+
+    let q
+    if (statusStr === "" || upper !== "ALL") {
+      const statusVal = statusStr === "" ? "PAID" : upper
+      q = {
+        $and: [{ $or: guideMatchOr }, { status: statusVal }]
       }
+    } else {
+      q = { $or: guideMatchOr }
     }
 
     const lim = Math.min(Math.max(toNumber(req.query?.limit, 50), 1), 200)
