@@ -65,6 +65,91 @@ router.get("/", requireAuth, async (req, res) => {
   }
 })
 
+router.get("/guide/me", requireAuth, async (req, res) => {
+  try {
+    const email = authEmail(req)
+
+    if (!email) {
+      return res.status(401).json({
+        ok: false,
+        error: "UNAUTHORIZED"
+      })
+    }
+
+    const db = mongoose.connection?.db
+
+    if (!db) {
+      return res.status(500).json({
+        ok: false,
+        error: "Mongo not connected"
+      })
+    }
+
+    const guide = await db.collection("guides").findOne({ email })
+
+    if (!guide) {
+      return res.status(404).json({
+        ok: false,
+        error: "GUIDE_NOT_FOUND"
+      })
+    }
+
+    const guideIds = new Set()
+    guideIds.add(String(guide._id))
+    const legacyGuideId = guide.guideId != null ? String(guide.guideId).trim() : ""
+    if (legacyGuideId) {
+      guideIds.add(legacyGuideId)
+    }
+
+    const normalizedGuideEmail = String(guide.email || email || "")
+      .trim()
+      .toLowerCase()
+
+    const guideMatchOr = [{ guideId: { $in: [...guideIds] } }]
+
+    if (normalizedGuideEmail) {
+      const escaped = normalizedGuideEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      const emailRegex = new RegExp(`^${escaped}$`, "i")
+      guideMatchOr.push({ guideEmail: emailRegex })
+      guideMatchOr.push({ email: emailRegex })
+    }
+
+    const rawStatus = req.query?.status
+    const statusStr = rawStatus === undefined || rawStatus === null ? "" : String(rawStatus).trim()
+
+    const upper = statusStr === "" ? "PAID" : statusStr.toUpperCase()
+
+    let q
+    if (statusStr === "" || upper !== "ALL") {
+      const statusVal = statusStr === "" ? "PAID" : upper
+      q = {
+        $and: [{ $or: guideMatchOr }, { status: statusVal }]
+      }
+    } else {
+      q = { $or: guideMatchOr }
+    }
+
+    const lim = Math.min(Math.max(toNumber(req.query?.limit, 50), 1), 200)
+    const rows = await Booking.find(q).sort({ createdAt: -1 }).limit(lim).lean()
+
+    const items = rows.map((b) => {
+      const idStr = String(b._id)
+      return { ...b, _id: idStr, bookingId: idStr }
+    })
+
+    return res.status(200).json({
+      ok: true,
+      items
+    })
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: "BOOKINGS_GUIDE_FETCH_FAILED",
+      detail: err?.message || "Internal Server Error"
+    })
+  }
+})
+
 router.post("/", requireAuth, async (req, res) => {
   try {
     const b = req.body || {}
