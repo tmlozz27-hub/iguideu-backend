@@ -26,6 +26,28 @@ async function loadBookingOrNull(bookingId) {
   return db.collection("bookings").findOne({ _id: new mongoose.Types.ObjectId(bookingId) })
 }
 
+async function isBookingParty(booking, currentUserEmail) {
+  const u = String(currentUserEmail || "").trim().toLowerCase()
+  if (!u) return false
+
+  const traveler = String(booking.travelerEmail || "").trim().toLowerCase()
+  if (traveler && traveler === u) return true
+
+  const bookingGuideId = String(booking.guideId || "").trim()
+  if (!bookingGuideId) return false
+
+  const db = mongoose.connection?.db
+  if (!db) return false
+
+  const guide = await db.collection("guides").findOne({ email: u })
+  if (!guide) return false
+
+  if (bookingGuideId === String(guide._id)) return true
+  const legacy = guide.guideId != null ? String(guide.guideId).trim() : ""
+  if (legacy && bookingGuideId === legacy) return true
+  return false
+}
+
 router.get("/health", (req, res) => {
   return res.status(200).json({ ok: true })
 })
@@ -68,7 +90,7 @@ router.get("/messages", requireAuth, async (req, res) => {
       })
     }
 
-    if (bookingTravelerEmail !== currentUserEmail) {
+    if (!(await isBookingParty(booking, currentUserEmail))) {
       return res.status(403).json({
         ok: false,
         error: "FORBIDDEN_BOOKING"
@@ -120,7 +142,7 @@ router.post("/messages", requireAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "BOOKING_TRAVELER_EMAIL_MISSING" })
     }
 
-    if (bookingTravelerEmail !== currentUserEmail) {
+    if (!(await isBookingParty(booking, currentUserEmail))) {
       return res.status(403).json({ ok: false, error: "FORBIDDEN_BOOKING" })
     }
 
