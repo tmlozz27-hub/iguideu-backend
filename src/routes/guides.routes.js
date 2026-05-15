@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -35,6 +36,10 @@ const getEmailFromToken = (authHeader) => {
     return "";
   }
 };
+
+function authEmail(req) {
+  return String(req.user?.email || "").trim().toLowerCase();
+}
 
 function toNumber(value, fallback = null) {
   const n = Number(value);
@@ -122,6 +127,107 @@ router.get("/me", async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: e?.message || "guide me error"
+    });
+  }
+});
+
+router.patch("/me", requireAuth, async (req, res) => {
+  try {
+    const db = mongoose.connection?.db;
+
+    if (!db) {
+      return res.status(500).json({ ok: false, error: "Mongo not connected" });
+    }
+
+    const email = authEmail(req);
+
+    if (!email) {
+      return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+    }
+
+    const guidesCol = db.collection("guides");
+    const existing = await guidesCol.findOne({ email });
+
+    if (!existing) {
+      return res.status(404).json({ ok: false, error: "GUIDE_NOT_FOUND" });
+    }
+
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const now = new Date();
+    const guideFields = {};
+
+    const takeString = (key) => {
+      if (!Object.prototype.hasOwnProperty.call(body, key) || body[key] === undefined) {
+        return;
+      }
+      guideFields[key] = String(body[key]).trim();
+    };
+
+    takeString("name");
+    takeString("phone");
+    takeString("city");
+    takeString("country");
+    takeString("bio");
+    takeString("languages");
+    takeString("guideType");
+    takeString("mainPhoto");
+
+    for (const key of ["priceHour", "priceDay", "price24h"]) {
+      if (!Object.prototype.hasOwnProperty.call(body, key) || body[key] === undefined) {
+        continue;
+      }
+      const n = Number(body[key]);
+      guideFields[key] = Number.isFinite(n) ? n : 0;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "rates") && body.rates !== undefined) {
+      guideFields.rates = body.rates;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "mediaDraft") && body.mediaDraft !== undefined) {
+      guideFields.mediaDraft = body.mediaDraft;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "active") && body.active !== undefined) {
+      guideFields.active = Boolean(body.active);
+    }
+
+    let passwordUpdated = false;
+
+    if (Object.prototype.hasOwnProperty.call(body, "password") && body.password !== undefined) {
+      const cleanPassword = String(body.password).trim();
+
+      if (cleanPassword) {
+        const usersCol = db.collection("users");
+        const ur = await usersCol.updateOne(
+          { email },
+          { $set: { password: hashPassword(cleanPassword), updatedAt: now } }
+        );
+
+        if (ur.matchedCount === 0) {
+          return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+        }
+
+        passwordUpdated = true;
+      }
+    }
+
+    const hasGuideFieldUpdates = Object.keys(guideFields).length > 0;
+
+    if (hasGuideFieldUpdates || passwordUpdated) {
+      await guidesCol.updateOne(
+        { email },
+        { $set: { ...guideFields, updatedAt: now } }
+      );
+    }
+
+    const guide = await guidesCol.findOne({ email });
+
+    return res.status(200).json({ ok: true, guide });
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: e?.message || "guide patch me error"
     });
   }
 });
