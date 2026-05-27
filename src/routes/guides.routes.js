@@ -22,10 +22,7 @@ function extractLatLng(doc) {
   for (const [a, b] of candidates) {
     const lat = Number(a);
     const lng = Number(b);
-
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      return { lat, lng };
-    }
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
   }
 
   return null;
@@ -33,175 +30,90 @@ function extractLatLng(doc) {
 
 function haversineKm(lat1, lng1, lat2, lng2) {
   const toRad = (v) => (v * Math.PI) / 180;
-
   const R = 6371;
-
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
-
   const aa =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRad(lat1)) *
       Math.cos(toRad(lat2)) *
       Math.sin(dLng / 2) *
       Math.sin(dLng / 2);
-
   const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
-
   return R * c;
+}
+
+async function getCurrentUser(db, email) {
+  if (!email) return null;
+  return db.collection("users").findOne({ email });
 }
 
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const db = mongoose.connection?.db;
+    if (!db) return res.status(500).json({ ok: false, error: "Mongo not connected" });
 
-    if (!db) {
-      return res.status(500).json({
-        ok: false,
-        error: "Mongo not connected"
-      });
-    }
-
-    const userEmail = String(req.user?.email || "")
-      .trim()
-      .toLowerCase();
-
-    if (!userEmail) {
-      return res.status(401).json({
-        ok: false,
-        error: "UNAUTHORIZED"
-      });
-    }
+    const userEmail = String(req.user?.email || "").trim().toLowerCase();
+    if (!userEmail) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
 
     const col = db.collection("guides");
-
     const guide =
       (await col.findOne({ userEmail })) ||
       (await col.findOne({ email: userEmail }));
 
-    if (!guide) {
-      return res.status(404).json({
-        ok: false,
-        error: "GUIDE_NOT_FOUND"
-      });
-    }
+    if (!guide) return res.status(404).json({ ok: false, error: "GUIDE_NOT_FOUND" });
 
-    return res.json({
-      ok: true,
-      item: guide
-    });
+    return res.json({ ok: true, item: guide });
   } catch (e) {
-    return res.status(500).json({
-      ok: false,
-      error: e?.message || "guide me error"
-    });
+    return res.status(500).json({ ok: false, error: e?.message || "guide me error" });
   }
 });
 
 router.get("/", async (req, res) => {
   try {
     const db = mongoose.connection?.db;
-
-    if (!db) {
-      return res.status(500).json({
-        error: "Mongo not connected"
-      });
-    }
+    if (!db) return res.status(500).json({ error: "Mongo not connected" });
 
     const col = db.collection("guides");
-
     const count = await col.countDocuments();
-
-    const query =
-      count > 0
-        ? {
-            $or: [
-              { active: true },
-              { active: { $exists: false } }
-            ]
-          }
-        : {};
-
-    const docs = await col
-      .find(query)
-      .sort({
-        updatedAt: -1,
-        createdAt: -1
-      })
-      .limit(200)
-      .toArray();
+    const query = count > 0 ? { $or: [{ active: true }, { active: { $exists: false } }] } : {};
+    const docs = await col.find(query).sort({ updatedAt: -1, createdAt: -1 }).limit(200).toArray();
 
     return res.json(docs);
   } catch (e) {
-    return res.status(500).json({
-      error: e?.message || "guides error"
-    });
+    return res.status(500).json({ error: e?.message || "guides error" });
   }
 });
 
 router.get("/nearby", async (req, res) => {
   try {
     const db = mongoose.connection?.db;
-
-    if (!db) {
-      return res.status(500).json({
-        error: "Mongo not connected"
-      });
-    }
+    if (!db) return res.status(500).json({ error: "Mongo not connected" });
 
     const lat = toNumber(req.query.lat);
     const lng = toNumber(req.query.lng);
     const radiusKm = toNumber(req.query.radius, 50);
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return res.status(400).json({
-        error: "lat and lng are required numeric query params"
-      });
+      return res.status(400).json({ error: "lat and lng are required numeric query params" });
     }
 
     const col = db.collection("guides");
-
     const count = await col.countDocuments();
-
-    const query =
-      count > 0
-        ? {
-            $or: [
-              { active: true },
-              { active: { $exists: false } }
-            ]
-          }
-        : {};
-
-    const docs = await col
-      .find(query)
-      .sort({
-        updatedAt: -1,
-        createdAt: -1
-      })
-      .limit(500)
-      .toArray();
+    const query = count > 0 ? { $or: [{ active: true }, { active: { $exists: false } }] } : {};
+    const docs = await col.find(query).sort({ updatedAt: -1, createdAt: -1 }).limit(500).toArray();
 
     const nearby = docs
       .map((doc) => {
         const point = extractLatLng(doc);
-
         if (!point) return null;
 
-        const distanceKm = haversineKm(
-          lat,
-          lng,
-          point.lat,
-          point.lng
-        );
+        const distanceKm = haversineKm(lat, lng, point.lat, point.lng);
 
         return {
           ...doc,
           distanceKm: Number(distanceKm.toFixed(2)),
-          geo: {
-            lat: point.lat,
-            lng: point.lng
-          }
+          geo: { lat: point.lat, lng: point.lng }
         };
       })
       .filter(Boolean)
@@ -217,29 +129,30 @@ router.get("/nearby", async (req, res) => {
       items: nearby
     });
   } catch (e) {
-    return res.status(500).json({
-      error: e?.message || "guides nearby error"
-    });
+    return res.status(500).json({ error: e?.message || "guides nearby error" });
   }
 });
 
 router.post("/", requireAuth, async (req, res) => {
   try {
     const db = mongoose.connection?.db;
+    if (!db) return res.status(500).json({ error: "Mongo not connected" });
 
-    if (!db) {
-      return res.status(500).json({
-        error: "Mongo not connected"
-      });
-    }
+    const userEmail = String(req.user?.email || "").trim().toLowerCase();
+    if (!userEmail) return res.status(401).json({ error: "UNAUTHORIZED" });
 
-    const userEmail = String(req.user?.email || "")
-      .trim()
-      .toLowerCase();
+    const user = await getCurrentUser(db, userEmail);
+    const userRole = String(user?.role || "").trim().toLowerCase();
 
-    if (!userEmail) {
-      return res.status(401).json({
-        error: "UNAUTHORIZED"
+    const col = db.collection("guides");
+    const existing = await col.findOne({
+      $or: [{ userEmail }, { email: userEmail }]
+    });
+
+    if (user && userRole && userRole !== "guide" && !existing) {
+      return res.status(409).json({
+        ok: false,
+        error: "ROLE_LOCKED_TO_TRAVELER"
       });
     }
 
@@ -257,19 +170,10 @@ router.post("/", requireAuth, async (req, res) => {
     } = req.body || {};
 
     if (!name || !city || !country) {
-      return res.status(400).json({
-        error: "MISSING_REQUIRED_FIELDS"
-      });
+      return res.status(400).json({ error: "MISSING_REQUIRED_FIELDS" });
     }
 
-    const col = db.collection("guides");
-
-    const existing = await col.findOne({
-      $or: [
-        { userEmail },
-        { email: userEmail }
-      ]
-    });
+    const now = new Date();
 
     const doc = {
       name: String(name).trim(),
@@ -284,43 +188,41 @@ router.post("/", requireAuth, async (req, res) => {
       priceDay: Number(priceDay) || 0,
       price24h: Number(price24h) || 0,
       active: active !== false,
-      updatedAt: new Date()
+      updatedAt: now
     };
 
     if (existing) {
-      await col.updateOne(
-        { _id: existing._id },
-        {
-          $set: doc
-        }
-      );
-
-      return res.json({
-        ok: true,
-        updated: true,
-        item: {
-          ...existing,
-          ...doc
-        }
-      });
+      await col.updateOne({ _id: existing._id }, { $set: doc });
+      return res.json({ ok: true, updated: true, item: { ...existing, ...doc } });
     }
 
-    doc.createdAt = new Date();
+    await db.collection("users").updateOne(
+      { email: userEmail },
+      {
+        $set: {
+          role: "guide",
+          updatedAt: now
+        },
+        $setOnInsert: {
+          email: userEmail,
+          name: String(name).trim(),
+          createdAt: now
+        }
+      },
+      { upsert: true }
+    );
+
+    doc.createdAt = now;
 
     const result = await col.insertOne(doc);
 
     return res.json({
       ok: true,
       insertedId: result.insertedId,
-      item: {
-        _id: result.insertedId,
-        ...doc
-      }
+      item: { _id: result.insertedId, ...doc }
     });
   } catch (e) {
-    return res.status(500).json({
-      error: e?.message || "create guide error"
-    });
+    return res.status(500).json({ error: e?.message || "create guide error" });
   }
 });
 
