@@ -1,5 +1,7 @@
 import express from "express"
 import cors from "cors"
+import helmet from "helmet"
+import rateLimit from "express-rate-limit"
 import { connectMongo } from "./services/mongo.js"
 
 import authRoutes from "./routes/auth.routes.js"
@@ -11,7 +13,19 @@ import chatRoutes from "./routes/chat.routes.js"
 
 const app = express()
 
+app.use(helmet())
+
 app.use(cors({ origin: "*", credentials: false }))
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => (req.originalUrl || "").startsWith("/api/stripe/webhook")
+})
+
+app.use(apiLimiter)
 
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }))
 
