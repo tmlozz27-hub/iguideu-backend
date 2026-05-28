@@ -13,9 +13,22 @@ import chatRoutes from "./routes/chat.routes.js"
 
 const app = express()
 
+const corsOrigins = String(process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((v) => v.trim())
+  .filter(Boolean)
+
 app.use(helmet())
 
-app.use(cors({ origin: "*", credentials: false }))
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, true)
+    if (corsOrigins.length === 0) return callback(null, true)
+    if (corsOrigins.includes(origin)) return callback(null, true)
+    return callback(new Error("CORS_NOT_ALLOWED"))
+  },
+  credentials: false
+}))
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
