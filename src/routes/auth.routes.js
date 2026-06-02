@@ -165,11 +165,15 @@ router.post("/register", async (req, res) => {
 
     const now = new Date();
 
+    // Captura quirúrgica del rol solicitado
+    const requestedRole = String(req.body?.role || "traveler").trim().toLowerCase();
+    const role = requestedRole === "guide" ? "guide" : "traveler";
+
     const result = await usersCollection().insertOne({
       name,
       email,
       password: hashPassword(password),
-      role: "traveler",
+      role,
       createdAt: now,
       updatedAt: now
     });
@@ -182,7 +186,8 @@ router.post("/register", async (req, res) => {
       user: {
         id: String(result.insertedId),
         name,
-        email
+        email,
+        role
       }
     });
   } catch {
