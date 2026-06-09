@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
+import { Resend } from "resend";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const router = express.Router();
@@ -354,5 +355,124 @@ router.post("/register", async (req, res) => {
     return res.status(500).json({ ok: false, message: "REGISTER_ERROR" });
   }
 });
+
+
+const resetTokens = new Map();
+
+async function sendPasswordResetEmail(to, token) {
+  const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+
+  if (!resend) {
+    console.log("RESEND_NOT_CONFIGURED");
+    return false;
+  }
+
+  const text = [
+    "Tu código de recuperación de I GUIDE U es: " + token,
+    "",
+    "Este código vence en 30 minutos.",
+    "",
+    "Si no pediste recuperar tu contraseña, ignorá este email."
+  ].join("\n");
+
+  const html =
+    '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">' +
+    "<h2>I GUIDE U</h2>" +
+    "<p>Tu código de recuperación es:</p>" +
+    '<p style="font-size:22px;font-weight:700;letter-spacing:1px">' + token + "</p>" +
+    "<p>Este código vence en 30 minutos.</p>" +
+    "<p>Si no pediste recuperar tu contraseña, ignorá este email.</p>" +
+    "</div>";
+
+  const resendResult = await resend.emails.send({
+    from: process.env.MAIL_FROM || "I GUIDE U <onboarding@resend.dev>",
+    to,
+    subject: "I GUIDE U - Recuperar contraseña",
+    text,
+    html
+  });
+
+  console.log("RESEND_RESULT", JSON.stringify(resendResult));
+  return !resendResult.error;
+}
+
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ ok: false, error: "EMAIL_REQUIRED" });
+    }
+
+    const user = await usersCollection().findOne({ email });
+
+    if (!user) {
+      return res.json({ ok: true, message: "If the email exists, recovery instructions were sent." });
+    }
+
+    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+    resetTokens.set(token, {
+      userId: String(user._id),
+      expiresAt: Date.now() + 1000 * 60 * 30
+    });
+
+    const emailSent = await sendPasswordResetEmail(email, token);
+
+    return res.json({
+      ok: true,
+      message: "If the email exists, recovery instructions were sent.",
+      emailSent
+    });
+  } catch (err) {
+    console.error("FORGOT_PASSWORD_ERROR", err);
+    return res.status(500).json({ ok: false, error: "FORGOT_PASSWORD_FAILED" });
+  }
+});
+
+router.post("/reset-password", async (req, res) => {
+  try {
+    const token = String(req.body?.token || "").trim();
+    const password = String(req.body?.password || "").trim();
+
+    if (!token) {
+      return res.status(400).json({ ok: false, error: "TOKEN_REQUIRED" });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ ok: false, error: "PASSWORD_MIN_6" });
+    }
+
+    const entry = resetTokens.get(token);
+
+    if (!entry || entry.expiresAt < Date.now()) {
+      return res.status(400).json({ ok: false, error: "TOKEN_INVALID_OR_EXPIRED" });
+    }
+
+    const hashedPassword = hashPassword(password);
+
+    const result = await usersCollection().updateOne(
+      { _id: new mongoose.Types.ObjectId(entry.userId) },
+      {
+        $set: {
+          password: hashedPassword,
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    resetTokens.delete(token);
+
+    if (!result.matchedCount) {
+      return res.status(400).json({ ok: false, error: "TOKEN_INVALID_OR_EXPIRED" });
+    }
+
+    return res.json({ ok: true, message: "Password updated." });
+  } catch (err) {
+    console.error("RESET_PASSWORD_ERROR", err);
+    return res.status(500).json({ ok: false, error: "RESET_PASSWORD_FAILED" });
+  }
+});
+
 
 export default router;
