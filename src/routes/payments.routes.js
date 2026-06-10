@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import mongoose from "mongoose";
 import Stripe from "stripe";
 import Booking from "../models/Booking.js";
@@ -194,7 +194,7 @@ router.post("/create-intent", requireAuth, async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountCents,
       currency: "usd",
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ["card"],
       metadata: {
         bookingId: String(booking._id),
         travelerEmail: bookingTravelerEmail
