@@ -36,6 +36,21 @@ function authEmail(req) {
   return String(req.user?.email || "").trim().toLowerCase()
 }
 
+function bookingEndPlus48hPassed(booking) {
+  const dateStr = String(booking?.date || "").trim()
+  const hours = Number(booking?.hours || 0)
+
+  if (!dateStr) return false
+
+  const start = new Date(`${dateStr}T00:00:00.000Z`)
+  if (Number.isNaN(start.getTime())) return false
+
+  const endMs = start.getTime() + Math.max(hours, 0) * 60 * 60 * 1000
+  const closeMs = endMs + 48 * 60 * 60 * 1000
+
+  return Date.now() >= closeMs
+}
+
 router.get("/", requireAuth, async (req, res) => {
   try {
     const { status, limit } = req.query || {}
