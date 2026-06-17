@@ -19,7 +19,10 @@ const BookingSchema = new mongoose.Schema(
     totalAmount: { type: Number, default: 0 },
     amount: { type: Number, default: 0 },
     stripePaymentIntentId: { type: String, default: null },
-    paidAt: { type: Date, default: null }
+
+    paidAt: { type: Date, default: null },
+    completedAt: { type: Date, default: null },
+    cancelledAt: { type: Date, default: null }
   },
   { timestamps: true }
 )
@@ -51,10 +54,39 @@ function bookingEndPlus48hPassed(booking) {
   return Date.now() >= closeMs
 }
 
+async function markCompletedPaidBookings() {
+  const paidBookings = await Booking.find({
+    status: "PAID",
+    date: { $nin: [null, ""] }
+  }).limit(500)
+
+  const ids = paidBookings
+    .filter((booking) => bookingEndPlus48hPassed(booking))
+    .map((booking) => booking._id)
+
+  if (!ids.length) {
+    return { updated: 0 }
+  }
+
+  const result = await Booking.updateMany(
+    { _id: { $in: ids }, status: "PAID" },
+    {
+      $set: {
+        status: "COMPLETED",
+        completedAt: new Date()
+      }
+    }
+  )
+
+  return { updated: result.modifiedCount || 0 }
+}
+
 router.get("/", requireAuth, async (req, res) => {
   try {
     const { status, limit } = req.query || {}
     const email = authEmail(req)
+
+    await markCompletedPaidBookings()
 
     if (!email) {
       return res.status(401).json({
@@ -83,6 +115,8 @@ router.get("/", requireAuth, async (req, res) => {
 router.get("/guide/me", requireAuth, async (req, res) => {
   try {
     const email = authEmail(req)
+
+    await markCompletedPaidBookings()
 
     if (!email) {
       return res.status(401).json({
