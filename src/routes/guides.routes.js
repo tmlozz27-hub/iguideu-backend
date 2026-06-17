@@ -87,7 +87,7 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
-router.get("/me", async (req, res) => {
+router.get("/me", requireAuth, async (req, res) => {
   try {
     const db = mongoose.connection?.db;
 
@@ -97,7 +97,7 @@ router.get("/me", async (req, res) => {
         .json({ ok: false, error: "Mongo not connected" });
     }
 
-    const userEmail = getEmailFromToken(req.headers.authorization);
+    const userEmail = authEmail(req);
 
     if (!userEmail) {
       return res.status(401).json({
