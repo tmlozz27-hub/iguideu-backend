@@ -355,7 +355,54 @@ router.post("/register", async (req, res) => {
     return res.status(500).json({ ok: false, message: "REGISTER_ERROR" });
   }
 });
+const authRateLimitStore = new Map();
 
+function authRateLimit({ windowMs = 15 * 60 * 1000, max = 5 } = {}) {
+  return (req, res, next) => {
+    const ip = String(
+      req.headers["x-forwarded-for"] ||
+      req.socket?.remoteAddress ||
+      "unknown"
+    )
+      .split(",")[0]
+      .trim();
+
+    const now = Date.now();
+    const key = `${ip}:${req.path}`;
+
+    const current = authRateLimitStore.get(key) || {
+      count: 0,
+      resetAt: now + windowMs,
+    };
+
+    if (now > current.resetAt) {
+      current.count = 0;
+      current.resetAt = now + windowMs;
+    }
+
+    current.count += 1;
+    authRateLimitStore.set(key, current);
+
+    if (current.count > max) {
+      return res.status(429).json({
+        ok: false,
+        error: "TOO_MANY_REQUESTS",
+      });
+    }
+
+    next();
+  };
+}
+
+const forgotPasswordLimiter = authRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+});
+
+const resetPasswordLimiter = authRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+});
 
 const resetTokens = new Map();
 
@@ -392,11 +439,10 @@ async function sendPasswordResetEmail(to, token) {
     html
   });
 
-  console.log("RESEND_RESULT", JSON.stringify(resendResult));
   return !resendResult.error;
 }
 
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
 
@@ -430,7 +476,7 @@ router.post("/forgot-password", async (req, res) => {
   }
 });
 
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
   try {
     const token = String(req.body?.token || "").trim();
     const password = String(req.body?.password || "").trim();
