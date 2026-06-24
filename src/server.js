@@ -8,6 +8,7 @@ import bookingsRoutes from "./routes/bookings.routes.js"
 import paymentsRoutes from "./routes/payments.routes.js"
 import stripeWebhookRoutes from "./routes/stripe.webhook.routes.js"
 import chatRoutes from "./routes/chat.routes.js"
+import uploadRoutes from "./routes/upload.routes.js"
 
 const app = express()
 
@@ -49,6 +50,7 @@ app.use("/api/reservations", bookingsRoutes)
 app.use("/api/payments", paymentsRoutes)
 app.use("/api/stripe", stripeWebhookRoutes)
 app.use("/api/chat", chatRoutes)
+app.use("/api/upload", uploadRoutes)
 
 const HOST = process.env.HOST || "0.0.0.0"
 const PORT = Number(process.env.PORT || 4020)

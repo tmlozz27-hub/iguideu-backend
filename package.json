@@ -13,6 +13,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
@@ -20,6 +21,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.21.0",
     "mongoose": "^8.5.2",
+    "multer": "^2.2.0",
     "resend": "^6.12.4",
     "stripe": "^16.12.0"
   }
