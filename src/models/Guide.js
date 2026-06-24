@@ -9,6 +9,22 @@ const GuideSchema = new mongoose.Schema(
     rating: { type: Number, default: 0 },
     languages: { type: [String], default: [] },
     avatarUrl: { type: String, default: "" },
+
+    mediaDraft: {
+      mainPhoto: {
+        uri: { type: String, default: "" }
+      },
+      galleryPhotos: [
+        {
+          uri: { type: String, default: "" },
+          slot: { type: Number, default: 0 }
+        }
+      ],
+      video: {
+        uri: { type: String, default: "" }
+      }
+    },
+
     bio: { type: String, default: "" },
     priceHour: { type: Number, default: 0 },
     priceDay: { type: Number, default: 0 },
