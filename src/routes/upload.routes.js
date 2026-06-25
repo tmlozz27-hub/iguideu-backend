@@ -31,6 +31,12 @@ function uploadBufferToCloudinary(buffer, options = {}) {
 
 router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
   try {
+    console.log("UPLOAD_MEDIA_START", {
+      hasFile: !!req.file,
+      contentType: req.headers["content-type"],
+      user: req.user?.email || ""
+    });
+
     if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
       return res.status(500).json({
         ok: false,
@@ -59,6 +65,11 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
     const result = await uploadBufferToCloudinary(req.file.buffer, {
       folder: "iguideu/guides",
       resource_type: isVideo ? "video" : "image"
+    });
+
+    console.log("UPLOAD_MEDIA_SUCCESS", {
+      url: result.secure_url,
+      resourceType: result.resource_type
     });
 
     return res.json({
