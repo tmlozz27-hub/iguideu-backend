@@ -171,6 +171,7 @@ router.patch("/me", requireAuth, async (req, res) => {
     takeString("languages");
     takeString("guideType");
     takeString("mainPhoto");
+    takeString("avatarUrl");
 
     for (const key of ["priceHour", "priceDay", "price24h"]) {
       if (!Object.prototype.hasOwnProperty.call(body, key) || body[key] === undefined) {
@@ -215,6 +216,9 @@ router.patch("/me", requireAuth, async (req, res) => {
     const hasGuideFieldUpdates = Object.keys(guideFields).length > 0;
 
     if (hasGuideFieldUpdates || passwordUpdated) {
+      console.log("GUIDE_PATCH_REQUEST", body);
+      console.log("GUIDE_PATCH_FIELDS", guideFields);
+
       await guidesCol.updateOne(
         { email },
         { $set: { ...guideFields, updatedAt: now } }
@@ -222,6 +226,11 @@ router.patch("/me", requireAuth, async (req, res) => {
     }
 
     const guide = await guidesCol.findOne({ email });
+
+    console.log("GUIDE_PATCH_SAVED", {
+      avatarUrl: guide?.avatarUrl || "",
+      mediaDraft: guide?.mediaDraft || null
+    });
 
     return res.status(200).json({ ok: true, guide });
   } catch (e) {
@@ -379,7 +388,11 @@ router.post("/", async (req, res) => {
       priceDay,
       price24h,
       active,
-      password
+      password,
+      avatarUrl,
+      mediaDraft,
+      guideType,
+      rates
     } = req.body || {};
 
     const cleanPassword = String(password || "").trim();
@@ -435,6 +448,10 @@ router.post("/", async (req, res) => {
       priceHour: Number(priceHour) || 0,
       priceDay: Number(priceDay) || 0,
       price24h: Number(price24h) || 0,
+      avatarUrl: avatarUrl ? String(avatarUrl).trim() : "",
+      mediaDraft: mediaDraft || null,
+      guideType: guideType ? String(guideType).trim() : "certified",
+      rates: rates || null,
       active: active !== false,
       createdAt: now,
       updatedAt: now
