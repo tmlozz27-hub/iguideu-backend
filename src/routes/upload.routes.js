@@ -8,7 +8,7 @@ const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 80 * 1024 * 1024
+    fileSize: 200 * 1024 * 1024
   }
 });
 
@@ -33,6 +33,8 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
   try {
     console.log("UPLOAD_MEDIA_START", {
       hasFile: !!req.file,
+      size: req.file?.size || 0,
+      mimetype: req.file?.mimetype || "",
       contentType: req.headers["content-type"],
       user: req.user?.email || ""
     });
@@ -58,7 +60,8 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
     if (!isVideo && !isImage) {
       return res.status(400).json({
         ok: false,
-        error: "UNSUPPORTED_FILE_TYPE"
+        error: "UNSUPPORTED_FILE_TYPE",
+        mimetype: mime
       });
     }
 
@@ -69,7 +72,8 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
 
     console.log("UPLOAD_MEDIA_SUCCESS", {
       url: result.secure_url,
-      resourceType: result.resource_type
+      resourceType: result.resource_type,
+      publicId: result.public_id
     });
 
     return res.json({
@@ -79,6 +83,12 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
       publicId: result.public_id
     });
   } catch (error) {
+    console.log("UPLOAD_MEDIA_ERROR", {
+      message: error?.message || "",
+      name: error?.name || "",
+      code: error?.code || ""
+    });
+
     return res.status(500).json({
       ok: false,
       error: error?.message || "UPLOAD_MEDIA_ERROR"
