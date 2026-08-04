@@ -1,9 +1,9 @@
 import express from "express"
 import mongoose from "mongoose"
 import { requireAuth } from "../middleware/auth.js"
-
+import Stripe from "stripe"
 const router = express.Router()
-
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 const BookingSchema = new mongoose.Schema(
   {
     travelerName: { type: String, default: "" },
@@ -281,10 +281,18 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "BOOKING_ALREADY_CANCELLED" })
     }
 
-    booking.status = "CANCELLED"
-    booking.cancelledAt = new Date()
+   if (booking.stripePaymentIntentId) {
+  const refund = await stripe.refunds.create({
+    payment_intent: booking.stripePaymentIntentId,
+  })
 
-    await booking.save()
+  console.log("STRIPE REFUND OK", refund.id)
+}
+
+booking.status = "CANCELLED"
+booking.cancelledAt = new Date()
+
+await booking.save()
 
     return res.status(200).json({ ok: true, booking })
   } catch (err) {
