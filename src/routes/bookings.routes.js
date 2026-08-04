@@ -295,10 +295,10 @@ booking.cancelledAt = new Date()
 await booking.save()
 
     return res.status(200).json({ ok: true, booking })
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: "BOOKING_CANCEL_FAILED", detail: err?.message || "Internal Server Error" })
-  }
-})
+} catch (err) {
+  console.error("BOOKING_CANCEL_ERROR", err)
+  return res.status(500).json({ ok: false, error: "BOOKING_CANCEL_FAILED", detail: err?.message || "Internal Server Error" })
+}
 
 router.get("/:id", requireAuth, async (_req, res) => {
   return res.status(403).json({
