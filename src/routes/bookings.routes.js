@@ -1,9 +1,9 @@
 import express from "express"
 import mongoose from "mongoose"
 import { requireAuth } from "../middleware/auth.js"
-import Stripe from "stripe"
+
 const router = express.Router()
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+
 const BookingSchema = new mongoose.Schema(
   {
     travelerName: { type: String, default: "" },
@@ -281,24 +281,15 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "BOOKING_ALREADY_CANCELLED" })
     }
 
-   if (booking.stripePaymentIntentId) {
-  const refund = await stripe.refunds.create({
-    payment_intent: booking.stripePaymentIntentId,
-  })
+    booking.status = "CANCELLED"
+    booking.cancelledAt = new Date()
 
-  console.log("STRIPE REFUND OK", refund.id)
-}
+    await booking.save()
 
-booking.status = "CANCELLED"
-booking.cancelledAt = new Date()
-
-await booking.save()
-
-return res.status(200).json({ ok: true, booking })
-} catch (err) {
-  console.error("BOOKING_CANCEL_ERROR", err)
-  return res.status(500).json({ ok: false, error: "BOOKING_CANCEL_FAILED", detail: err?.message || "Internal Server Error" })
-}
+    return res.status(200).json({ ok: true, booking })
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: "BOOKING_CANCEL_FAILED", detail: err?.message || "Internal Server Error" })
+  }
 })
 
 router.get("/:id", requireAuth, async (_req, res) => {
@@ -308,4 +299,4 @@ router.get("/:id", requireAuth, async (_req, res) => {
   })
 })
 
-export default router  
+export default router
