@@ -1,3 +1,8 @@
+import * as Sentry from "@sentry/node"
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN
+})
 import express from "express"
 import cors from "cors"
 import { connectMongo } from "./services/mongo.js"
@@ -51,7 +56,7 @@ app.use("/api/payments", paymentsRoutes)
 app.use("/api/stripe", stripeWebhookRoutes)
 app.use("/api/chat", chatRoutes)
 app.use("/api/upload", uploadRoutes)
-
+Sentry.setupExpressErrorHandler(app)
 const HOST = process.env.HOST || "0.0.0.0"
 const PORT = Number(process.env.PORT || 4020)
 
