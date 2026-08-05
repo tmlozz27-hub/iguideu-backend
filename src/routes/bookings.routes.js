@@ -1,9 +1,11 @@
 import express from "express"
 import mongoose from "mongoose"
+import Stripe from "stripe"
 import { requireAuth } from "../middleware/auth.js"
 
 const router = express.Router()
-
+const stripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim()
+const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null
 const BookingSchema = new mongoose.Schema(
   {
     travelerName: { type: String, default: "" },
@@ -271,14 +273,47 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" })
     }
 
-    const bookingTravelerEmail = String(booking.travelerEmail || "").trim().toLowerCase()
+    const bookingTravelerEmail = String(
+      booking.travelerEmail || ""
+    ).trim().toLowerCase()
 
     if (bookingTravelerEmail !== email) {
       return res.status(403).json({ ok: false, error: "FORBIDDEN_BOOKING" })
     }
 
     if (booking.status === "CANCELLED") {
-      return res.status(400).json({ ok: false, error: "BOOKING_ALREADY_CANCELLED" })
+      return res.status(400).json({
+        ok: false,
+        error: "BOOKING_ALREADY_CANCELLED"
+      })
+    }
+
+    const paymentIntentId = String(
+      booking.stripePaymentIntentId || ""
+    ).trim()
+
+    let refund = null
+
+    if (booking.status === "PAID" && paymentIntentId) {
+      if (!stripe) {
+        return res.status(500).json({
+          ok: false,
+          error: "STRIPE_NOT_CONFIGURED"
+        })
+      }
+
+      refund = await stripe.refunds.create(
+        {
+          payment_intent: paymentIntentId,
+          metadata: {
+            bookingId: String(booking._id),
+            travelerEmail: bookingTravelerEmail
+          }
+        },
+        {
+          idempotencyKey: `booking-cancel-refund-${booking._id}`
+        }
+      )
     }
 
     booking.status = "CANCELLED"
@@ -286,17 +321,33 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
 
     await booking.save()
 
-    return res.status(200).json({ ok: true, booking })
+    return res.status(200).json({
+      ok: true,
+      booking,
+      refund: refund
+        ? {
+            id: refund.id,
+            status: refund.status,
+            amount: refund.amount,
+            currency: refund.currency,
+            paymentIntentId
+          }
+        : null
+    })
   } catch (err) {
-    return res.status(500).json({ ok: false, error: "BOOKING_CANCEL_FAILED", detail: err?.message || "Internal Server Error" })
+    console.error("BOOKING_CANCEL_FAILED", err)
+
+    return res.status(500).json({
+      ok: false,
+      error: "BOOKING_CANCEL_FAILED",
+      detail: err?.message || "Internal Server Error"
+    })
   }
 })
-
 router.get("/:id", requireAuth, async (_req, res) => {
   return res.status(403).json({
     ok: false,
     error: "BOOKING_DIRECT_FETCH_DISABLED"
   })
 })
-
 export default router
