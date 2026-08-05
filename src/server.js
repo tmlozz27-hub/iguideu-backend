@@ -56,6 +56,9 @@ app.use("/api/payments", paymentsRoutes)
 app.use("/api/stripe", stripeWebhookRoutes)
 app.use("/api/chat", chatRoutes)
 app.use("/api/upload", uploadRoutes)
+app.get("/api/sentry-test-20260805", (_req, _res) => {
+  throw new Error("SENTRY_BACKEND_TEST_20260805")
+})
 Sentry.setupExpressErrorHandler(app)
 const HOST = process.env.HOST || "0.0.0.0"
 const PORT = Number(process.env.PORT || 4020)
