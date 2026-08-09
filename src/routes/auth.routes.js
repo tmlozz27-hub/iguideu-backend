@@ -131,7 +131,62 @@ function normalizeFullName(fullName) {
   return "";
 }
 
-router.post("/google", async (req, res) => {
+const authRateLimitStore = new Map();
+
+function authRateLimit({ windowMs = 15 * 60 * 1000, max = 5 } = {}) {
+  return (req, res, next) => {
+    const ip = String(
+      req.headers["x-forwarded-for"] ||
+      req.socket?.remoteAddress ||
+      "unknown"
+    )
+      .split(",")[0]
+      .trim();
+
+    const now = Date.now();
+    const key = `${ip}:${req.path}`;
+
+    const current = authRateLimitStore.get(key) || {
+      count: 0,
+      resetAt: now + windowMs,
+    };
+
+    if (now > current.resetAt) {
+      current.count = 0;
+      current.resetAt = now + windowMs;
+    }
+
+    current.count += 1;
+    authRateLimitStore.set(key, current);
+
+    if (current.count > max) {
+      return res.status(429).json({
+        ok: false,
+        error: "TOO_MANY_REQUESTS",
+      });
+    }
+
+    next();
+  };
+}
+
+const loginLimiter = authRateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
+const registerLimiter = authRateLimit({ windowMs: 60 * 60 * 1000, max: 5 });
+const googleLimiter = authRateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+const appleLimiter = authRateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+
+const forgotPasswordLimiter = authRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+});
+
+const resetPasswordLimiter = authRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+});
+
+
+router.post("/google", googleLimiter, async (req, res) => {
   try {
     const token = String(req.body?.token || "").trim();
 
@@ -233,7 +288,7 @@ router.put("/me", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/apple", async (req, res) => {
+router.post("/apple", appleLimiter, async (req, res) => {
   try {
     const identityToken = req.body?.identityToken;
     const bodyEmail = req.body?.email;
@@ -299,7 +354,7 @@ router.post("/apple", async (req, res) => {
   }
 });
 
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
     const password = String(req.body?.password || "").trim();
@@ -328,7 +383,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-router.post("/register", async (req, res) => {
+router.post("/register", registerLimiter, async (req, res) => {
   try {
     const name = String(req.body?.name || "").trim();
     const email = String(req.body?.email || "").trim().toLowerCase();
@@ -379,55 +434,6 @@ router.post("/register", async (req, res) => {
     return res.status(500).json({ ok: false, message: "REGISTER_ERROR" });
   }
 });
-const authRateLimitStore = new Map();
-
-function authRateLimit({ windowMs = 15 * 60 * 1000, max = 5 } = {}) {
-  return (req, res, next) => {
-    const ip = String(
-      req.headers["x-forwarded-for"] ||
-      req.socket?.remoteAddress ||
-      "unknown"
-    )
-      .split(",")[0]
-      .trim();
-
-    const now = Date.now();
-    const key = `${ip}:${req.path}`;
-
-    const current = authRateLimitStore.get(key) || {
-      count: 0,
-      resetAt: now + windowMs,
-    };
-
-    if (now > current.resetAt) {
-      current.count = 0;
-      current.resetAt = now + windowMs;
-    }
-
-    current.count += 1;
-    authRateLimitStore.set(key, current);
-
-    if (current.count > max) {
-      return res.status(429).json({
-        ok: false,
-        error: "TOO_MANY_REQUESTS",
-      });
-    }
-
-    next();
-  };
-}
-
-const forgotPasswordLimiter = authRateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-});
-
-const resetPasswordLimiter = authRateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-});
-
 const resetTokens = new Map();
 
 async function sendPasswordResetEmail(to, token) {
