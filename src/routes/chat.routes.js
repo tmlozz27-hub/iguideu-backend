@@ -132,8 +132,6 @@ router.get("/messages", requireAuth, async (req, res) => {
 router.post("/messages", requireAuth, async (req, res) => {
   try {
     const bookingId = toSafeString(req.body?.bookingId)
-    const senderId = toSafeString(req.body?.senderId)
-    const senderType = toSafeString(req.body?.senderType)
     const text = toSafeString(req.body?.text)
     const currentUserEmail = authEmail(req)
 
@@ -160,6 +158,10 @@ router.post("/messages", requireAuth, async (req, res) => {
     if (!(await isBookingParty(booking, currentUserEmail))) {
       return res.status(403).json({ ok: false, error: "FORBIDDEN_BOOKING" })
     }
+
+    const senderId = String(req.user?.id || currentUserEmail).trim()
+    const senderType =
+      currentUserEmail === bookingTravelerEmail ? "traveler" : "guide"
 
     if (bookingEndPlus48hPassed(booking)) {
       return res.status(403).json({
