@@ -89,6 +89,27 @@ router.post("/webhook", async (req, res) => {
           bookingId
         );
       } else {
+        const expectedPaymentIntentId = String(booking.stripePaymentIntentId || "").trim();
+        const expectedAmountCents = Number(booking.amountCents || 0);
+        const expectedCurrency = String(booking.currency || "usd").trim().toLowerCase();
+        const receivedAmountCents = Number(obj?.amount_received || 0);
+        const receivedCurrency = String(obj?.currency || "").trim().toLowerCase();
+
+        if (!expectedPaymentIntentId || expectedPaymentIntentId !== paymentIntentId) {
+          console.log("WEBHOOK_PAYMENT_INTENT_MISMATCH", String(booking._id), paymentIntentId);
+          return res.status(400).json({ received: false, error: "PAYMENT_INTENT_MISMATCH" });
+        }
+
+        if (!Number.isFinite(expectedAmountCents) || expectedAmountCents <= 0 || receivedAmountCents !== expectedAmountCents) {
+          console.log("WEBHOOK_AMOUNT_MISMATCH", String(booking._id), receivedAmountCents);
+          return res.status(400).json({ received: false, error: "AMOUNT_MISMATCH" });
+        }
+
+        if (!receivedCurrency || receivedCurrency !== expectedCurrency) {
+          console.log("WEBHOOK_CURRENCY_MISMATCH", String(booking._id), receivedCurrency);
+          return res.status(400).json({ received: false, error: "CURRENCY_MISMATCH" });
+        }
+
         booking.status = "PAID";
         booking.stripePaymentIntentId = paymentIntentId || booking.stripePaymentIntentId;
         booking.paidAt = new Date();
