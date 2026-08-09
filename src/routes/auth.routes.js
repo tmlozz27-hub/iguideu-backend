@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import crypto from "crypto";
 import { Resend } from "resend";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import jwt from "jsonwebtoken";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -10,21 +12,26 @@ const usersCollection = () => mongoose.connection.db.collection("users");
 
 const PASSWORD_PREFIX = "scrypt$";
 
-const getEmailFromToken = (authHeader) => {
-  const raw = String(authHeader || "").trim();
-  if (!raw.toLowerCase().startsWith("bearer ")) return "";
-  const token = raw.slice(7).trim();
-  if (!token.startsWith("DEV_TOKEN_")) return "";
-  const encoded = token.replace("DEV_TOKEN_", "");
-  try {
-    return Buffer.from(encoded, "base64").toString("utf8").trim().toLowerCase();
-  } catch {
-    return "";
-  }
-};
+const makeToken = (user) => {
+  const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || "";
+  if (!secret) throw new Error("JWT_SECRET_MISSING");
 
-const makeToken = (email) => {
-  return "DEV_TOKEN_" + Buffer.from(String(email || "").trim().toLowerCase()).toString("base64");
+  const email = String(user?.email || "").trim().toLowerCase();
+  const role = String(user?.role || "traveler");
+  const sub = String(user?._id || user?.id || "");
+
+  if (!email) throw new Error("JWT_EMAIL_MISSING");
+
+  return jwt.sign(
+    { email, role },
+    secret,
+    {
+      subject: sub || email,
+      issuer: "iguideu-backend",
+      audience: "iguideu-mobile",
+      expiresIn: "7d"
+    }
+  );
 };
 
 const hashPassword = (plainPassword) => {
@@ -85,6 +92,28 @@ const APPLE_JWKS = createRemoteJWKSet(
   new URL("https://appleid.apple.com/auth/keys")
 );
 
+const GOOGLE_JWKS = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/oauth2/v3/certs")
+);
+
+const GOOGLE_AUDIENCES = [
+  "661263042735-677bo9vuvgkds5g80h2phrn683rv3d88.apps.googleusercontent.com",
+  "811938102755-r4acnclbtid8o2ac5jvvevh81dbt8rka.apps.googleusercontent.com"
+];
+
+async function verifyGoogleIdentityToken(identityToken) {
+  const { payload } = await jwtVerify(identityToken, GOOGLE_JWKS, {
+    issuer: ["https://accounts.google.com", "accounts.google.com"],
+    audience: GOOGLE_AUDIENCES
+  });
+
+  if (!payload.email || payload.email_verified === false) {
+    throw new Error("GOOGLE_EMAIL_NOT_VERIFIED");
+  }
+
+  return payload;
+}
+
 async function verifyAppleIdentityToken(identityToken) {
   const { payload } = await jwtVerify(identityToken, APPLE_JWKS, {
     issuer: "https://appleid.apple.com",
@@ -105,16 +134,14 @@ function normalizeFullName(fullName) {
 router.post("/google", async (req, res) => {
   try {
     const token = String(req.body?.token || "").trim();
-    const email = String(req.body?.email || "").trim().toLowerCase();
-    const name = String(req.body?.name || "Google User").trim();
 
     if (!token) {
       return res.status(400).json({ ok: false, message: "TOKEN_REQUIRED" });
     }
 
-    if (!email) {
-      return res.status(400).json({ ok: false, message: "EMAIL_REQUIRED" });
-    }
+    const decoded = await verifyGoogleIdentityToken(token);
+    const email = String(decoded.email || "").trim().toLowerCase();
+    const name = String(decoded.name || "Google User").trim();
 
     let user = await usersCollection().findOne({ email });
 
@@ -135,29 +162,26 @@ router.post("/google", async (req, res) => {
       user = {
         _id: result.insertedId,
         name,
-        email
+        email,
+        role: "traveler"
       };
     }
 
-    const jwt = makeToken(email);
+    const sessionToken = makeToken(user);
 
     return res.json({
       ok: true,
-      token: jwt,
+      token: sessionToken,
       user: publicUser(user)
     });
   } catch {
-    return res.status(500).json({ ok: false, message: "GOOGLE_ERROR" });
+    return res.status(401).json({ ok: false, message: "GOOGLE_INVALID_TOKEN" });
   }
 });
 
-router.get("/me", async (req, res) => {
+router.get("/me", requireAuth, async (req, res) => {
   try {
-    const email = getEmailFromToken(req.headers.authorization);
-
-    if (!email) {
-      return res.status(401).json({ ok: false, message: "AUTH_REQUIRED" });
-    }
+    const email = String(req.user?.email || "").trim().toLowerCase();
 
     const user = await usersCollection().findOne({ email });
 
@@ -174,13 +198,9 @@ router.get("/me", async (req, res) => {
   }
 });
 
-router.put("/me", async (req, res) => {
+router.put("/me", requireAuth, async (req, res) => {
   try {
-    const email = getEmailFromToken(req.headers.authorization);
-
-    if (!email) {
-      return res.status(401).json({ ok: false, message: "AUTH_REQUIRED" });
-    }
+    const email = String(req.user?.email || "").trim().toLowerCase();
 
     const update = {
       name: String(req.body?.name || "").trim(),
@@ -267,7 +287,7 @@ router.post("/apple", async (req, res) => {
       };
     }
 
-    const token = makeToken(email);
+    const token = makeToken(user);
 
     return res.json({
       ok: true,
@@ -296,7 +316,7 @@ router.post("/login", async (req, res) => {
 
     if (!valid) return res.status(401).json({ ok: false, message: "INVALID_CREDENTIALS" });
 
-    const token = makeToken(email);
+    const token = makeToken(user);
 
     return res.json({
       ok: true,
@@ -339,7 +359,11 @@ router.post("/register", async (req, res) => {
       updatedAt: now
     });
 
-    const token = makeToken(email);
+    const token = makeToken({
+      _id: result.insertedId,
+      email,
+      role
+    });
 
     return res.status(201).json({
       ok: true,

@@ -6,15 +6,6 @@ function readBearer(req) {
   return raw.slice(7).trim();
 }
 
-function decodeDevToken(token) {
-  if (!token.startsWith("DEV_TOKEN_")) return "";
-  const encoded = token.slice("DEV_TOKEN_".length);
-  try {
-    return Buffer.from(encoded, "base64").toString("utf8").trim().toLowerCase();
-  } catch {
-    return "";
-  }
-}
 
 export function requireAuth(req, res, next) {
   try {
@@ -24,22 +15,6 @@ export function requireAuth(req, res, next) {
       return res.status(401).json({ ok: false, error: "missing_token" });
     }
 
-    if (token.startsWith("DEV_TOKEN_")) {
-      const email = decodeDevToken(token);
-
-      if (!email) {
-        return res.status(401).json({ ok: false, error: "invalid_token" });
-      }
-
-      req.user = {
-        id: "",
-        email,
-        role: "traveler",
-        tokenType: "dev"
-      };
-
-      return next();
-    }
 
     const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || "";
 
@@ -47,7 +22,10 @@ export function requireAuth(req, res, next) {
       return res.status(500).json({ ok: false, error: "jwt_secret_missing" });
     }
 
-    const payload = jwt.verify(token, secret);
+    const payload = jwt.verify(token, secret, {
+      issuer: "iguideu-backend",
+      audience: "iguideu-mobile"
+    });
 
     req.user = {
       id: String(payload.sub || ""),
