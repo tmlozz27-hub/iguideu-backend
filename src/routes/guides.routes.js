@@ -346,16 +346,8 @@ router.get("/nearby", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
   try {
-    const db = mongoose.connection?.db;
-
-    if (!db) {
-      return res.status(500).json({
-        error: "Mongo not connected"
-      });
-    }
-
     const {
       name,
       email,
@@ -386,6 +378,20 @@ router.post("/", async (req, res) => {
     const cleanEmail = String(email)
       .trim()
       .toLowerCase();
+
+    const authenticatedEmail = String(req.user?.email || "").trim().toLowerCase();
+
+    if (!authenticatedEmail || authenticatedEmail !== cleanEmail) {
+      return res.status(403).json({ ok: false, error: "FORBIDDEN_GUIDE_EMAIL" });
+    }
+
+    const db = mongoose.connection?.db;
+
+    if (!db) {
+      return res.status(500).json({
+        error: "Mongo not connected"
+      });
+    }
 
     const usersCol = db.collection("users");
 
