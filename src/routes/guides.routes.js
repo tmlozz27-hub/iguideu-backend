@@ -16,26 +16,6 @@ const hashPassword = (plainPassword) => {
   return `${PASSWORD_PREFIX}${salt}$${derived}`;
 };
 
-const getEmailFromToken = (authHeader) => {
-  const raw = String(authHeader || "").trim();
-
-  if (!raw.toLowerCase().startsWith("bearer ")) return "";
-
-  const token = raw.slice(7).trim();
-
-  if (!token.startsWith("DEV_TOKEN_")) return "";
-
-  const encoded = token.replace("DEV_TOKEN_", "");
-
-  try {
-    return Buffer.from(encoded, "base64")
-      .toString("utf8")
-      .trim()
-      .toLowerCase();
-  } catch {
-    return "";
-  }
-};
 
 function authEmail(req) {
   return String(req.user?.email || "").trim().toLowerCase();
