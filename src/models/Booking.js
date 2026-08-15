@@ -34,6 +34,16 @@ const BookingSchema = new mongoose.Schema(
     },
 
     stripePaymentIntentId: { type: String, default: "", index: true },
+    stripeTransferId: { type: String, default: "", index: true },
+    guidePayoutAmountCents: { type: Number, default: 0 },
+    guidePayoutStatus: {
+      type: String,
+      default: "NOT_READY",
+      enum: ["NOT_READY", "READY", "PROCESSING", "TRANSFERRED", "FAILED"]
+    },
+    guidePayoutEligibleAt: { type: Date, default: null },
+    guidePayoutTransferredAt: { type: Date, default: null },
+    guidePayoutError: { type: String, default: "" },
 
     paidAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },

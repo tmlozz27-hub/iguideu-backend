@@ -30,6 +30,14 @@ const GuideSchema = new mongoose.Schema(
     priceDay: { type: Number, default: 0 },
     priceFullDay24h: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
+    stripeConnect: {
+      accountId: { type: String, default: "", index: true },
+      onboardingComplete: { type: Boolean, default: false },
+      chargesEnabled: { type: Boolean, default: false },
+      payoutsEnabled: { type: Boolean, default: false },
+      country: { type: String, default: "" },
+      currency: { type: String, default: "usd" }
+    },
 
     membership: {
       active: { type: Boolean, default: false },
