@@ -1,9 +1,21 @@
 import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
+import Stripe from "stripe";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
+
+const STRIPE_SECRET_KEY =
+  process.env.STRIPE_SECRET_KEY ||
+  process.env.STRIPE_SECRET ||
+  "";
+
+let stripe = null;
+
+if (STRIPE_SECRET_KEY) {
+  stripe = new Stripe(STRIPE_SECRET_KEY);
+}
 
 const PASSWORD_PREFIX = "scrypt$";
 
@@ -66,6 +78,125 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 
   return R * c;
 }
+
+router.post("/me/connect/onboarding", requireAuth, async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({
+        ok: false,
+        error: "STRIPE_NOT_CONFIGURED"
+      });
+    }
+
+    const db = mongoose.connection?.db;
+
+    if (!db) {
+      return res.status(500).json({
+        ok: false,
+        error: "Mongo not connected"
+      });
+    }
+
+    const email = authEmail(req);
+
+    if (!email) {
+      return res.status(401).json({
+        ok: false,
+        error: "UNAUTHORIZED"
+      });
+    }
+
+    const guidesCol = db.collection("guides");
+    const guide = await guidesCol.findOne({ email });
+
+    if (!guide) {
+      return res.status(404).json({
+        ok: false,
+        error: "GUIDE_NOT_FOUND"
+      });
+    }
+
+    let accountId = guide?.stripeConnect?.accountId || null;
+
+    if (!accountId) {
+      const account = await stripe.accounts.create(
+        {
+          email,
+          controller: {
+            fees: {
+              payer: "application"
+            },
+            losses: {
+              payments: "application"
+            },
+            stripe_dashboard: {
+              type: "express"
+            }
+          },
+          capabilities: {
+            transfers: {
+              requested: true
+            }
+          },
+          metadata: {
+            guideId: String(guide._id),
+            guideEmail: email
+          }
+        },
+        {
+          idempotencyKey: `guide-connect-account-${guide._id}`
+        }
+      );
+
+      accountId = account.id;
+
+      await guidesCol.updateOne(
+        { _id: guide._id },
+        {
+          $set: {
+            "stripeConnect.accountId": accountId,
+            "stripeConnect.onboardingComplete": false,
+            "stripeConnect.chargesEnabled": Boolean(account.charges_enabled),
+            "stripeConnect.payoutsEnabled": Boolean(account.payouts_enabled),
+            "stripeConnect.country": account.country || "",
+            "stripeConnect.currency": account.default_currency || ""
+          }
+        }
+      );
+    }
+
+    const refreshUrl =
+      process.env.STRIPE_CONNECT_REFRESH_URL ||
+      "https://www.i-guide-u.com/connect/refresh";
+
+    const returnUrl =
+      process.env.STRIPE_CONNECT_RETURN_URL ||
+      "https://www.i-guide-u.com/connect/return";
+
+    const accountLink = await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: refreshUrl,
+      return_url: returnUrl,
+      type: "account_onboarding",
+      collection_options: {
+        fields: "eventually_due"
+      }
+    });
+
+    return res.json({
+      ok: true,
+      accountId,
+      onboardingUrl: accountLink.url
+    });
+  } catch (e) {
+    console.error("stripe connect onboarding error", e);
+
+    return res.status(500).json({
+      ok: false,
+      error: e?.message || "STRIPE_CONNECT_ONBOARDING_ERROR"
+    });
+  }
+});
 
 router.get("/me", requireAuth, async (req, res) => {
   try {
