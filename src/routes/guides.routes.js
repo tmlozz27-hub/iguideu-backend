@@ -197,7 +197,98 @@ router.post("/me/connect/onboarding", requireAuth, async (req, res) => {
     });
   }
 });
+router.post("/me/connect/sync", requireAuth, async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({
+        ok: false,
+        error: "STRIPE_NOT_CONFIGURED"
+      });
+    }
 
+    const db = mongoose.connection?.db;
+
+    if (!db) {
+      return res.status(500).json({
+        ok: false,
+        error: "Mongo not connected"
+      });
+    }
+
+    const email = authEmail(req);
+
+    if (!email) {
+      return res.status(401).json({
+        ok: false,
+        error: "UNAUTHORIZED"
+      });
+    }
+
+    const guidesCol = db.collection("guides");
+    const guide = await guidesCol.findOne({ email });
+
+    if (!guide) {
+      return res.status(404).json({
+        ok: false,
+        error: "GUIDE_NOT_FOUND"
+      });
+    }
+
+    const accountId = guide?.stripeConnect?.accountId || "";
+
+    if (!accountId) {
+      return res.status(400).json({
+        ok: false,
+        error: "STRIPE_CONNECT_ACCOUNT_MISSING"
+      });
+    }
+
+    const account = await stripe.accounts.retrieve(accountId);
+
+    const currentlyDue = Array.isArray(account?.requirements?.currently_due)
+      ? account.requirements.currently_due
+      : [];
+
+    const onboardingComplete =
+      Boolean(account.details_submitted) &&
+      currentlyDue.length === 0;
+
+    const stripeConnect = {
+      accountId,
+      onboardingComplete,
+      chargesEnabled: Boolean(account.charges_enabled),
+      payoutsEnabled: Boolean(account.payouts_enabled),
+      country: account.country || "",
+      currency: account.default_currency || ""
+    };
+
+    await guidesCol.updateOne(
+      { _id: guide._id },
+      {
+        $set: {
+          "stripeConnect.accountId": stripeConnect.accountId,
+          "stripeConnect.onboardingComplete": stripeConnect.onboardingComplete,
+          "stripeConnect.chargesEnabled": stripeConnect.chargesEnabled,
+          "stripeConnect.payoutsEnabled": stripeConnect.payoutsEnabled,
+          "stripeConnect.country": stripeConnect.country,
+          "stripeConnect.currency": stripeConnect.currency
+        }
+      }
+    );
+
+    return res.json({
+      ok: true,
+      stripeConnect
+    });
+  } catch (e) {
+    console.error("stripe connect sync error", e);
+
+    return res.status(500).json({
+      ok: false,
+      error: e?.message || "STRIPE_CONNECT_SYNC_ERROR"
+    });
+  }
+});
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const db = mongoose.connection?.db;
