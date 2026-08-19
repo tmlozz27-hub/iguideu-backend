@@ -5,6 +5,7 @@ Sentry.init({
 })
 import express from "express"
 import cors from "cors"
+import helmet from "helmet"
 import { connectMongo } from "./services/mongo.js"
 
 import authRoutes from "./routes/auth.routes.js"
@@ -17,6 +18,7 @@ import uploadRoutes from "./routes/upload.routes.js"
 
 const app = express()
 
+app.use(helmet())
 app.use(cors({ origin: "*", credentials: false }))
 
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }))
