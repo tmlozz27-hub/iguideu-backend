@@ -486,7 +486,7 @@ router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
       return res.json({ ok: true, message: "If the email exists, recovery instructions were sent." });
     }
 
-    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const token = crypto.randomBytes(32).toString("hex");
 
     resetTokens.set(token, {
       userId: String(user._id),
