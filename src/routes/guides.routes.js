@@ -196,8 +196,7 @@ router.patch("/me", requireAuth, async (req, res) => {
     const hasGuideFieldUpdates = Object.keys(guideFields).length > 0;
 
     if (hasGuideFieldUpdates || passwordUpdated) {
-      console.log("GUIDE_PATCH_REQUEST", body);
-      console.log("GUIDE_PATCH_FIELDS", guideFields);
+      console.log("GUIDE_PATCH", { email, fields: Object.keys(guideFields), passwordUpdated });
 
       await guidesCol.updateOne(
         { email },
@@ -206,11 +205,6 @@ router.patch("/me", requireAuth, async (req, res) => {
     }
 
     const guide = await guidesCol.findOne({ email });
-
-    console.log("GUIDE_PATCH_SAVED", {
-      avatarUrl: guide?.avatarUrl || "",
-      mediaDraft: guide?.mediaDraft || null
-    });
 
     return res.status(200).json({ ok: true, guide });
   } catch (e) {
@@ -221,6 +215,37 @@ router.patch("/me", requireAuth, async (req, res) => {
   }
 });
 
+function toPublicGuide(doc = {}) {
+  const allowed = [
+    "_id",
+    "guideId",
+    "name",
+    "country",
+    "countryCode",
+    "code",
+    "city",
+    "languages",
+    "priceHour",
+    "priceDay",
+    "price24h",
+    "pricePerHour",
+    "priceFullDay24h",
+    "bio",
+    "avatarUrl",
+    "guideType",
+    "mediaDraft",
+    "rates",
+    "rating",
+    "reviewsCount",
+    "active"
+  ];
+
+  const safe = {};
+  for (const key of allowed) {
+    if (doc[key] !== undefined) safe[key] = doc[key];
+  }
+  return safe;
+}
 router.get("/", async (req, res) => {
   try {
     const db = mongoose.connection?.db;
@@ -254,7 +279,7 @@ router.get("/", async (req, res) => {
       .limit(200)
       .toArray();
 
-    return res.json(docs);
+    return res.json(docs.map(toPublicGuide));
   } catch (e) {
     return res.status(500).json({
       error: e?.message || "guides error"
@@ -319,7 +344,7 @@ router.get("/nearby", async (req, res) => {
         );
 
         return {
-          ...doc,
+          ...toPublicGuide(doc),
           distanceKm: Number(distanceKm.toFixed(2)),
           geo: {
             lat: point.lat,
