@@ -36,7 +36,6 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
       size: req.file?.size || 0,
       mimetype: req.file?.mimetype || "",
       contentType: req.headers["content-type"],
-      user: req.user?.email || ""
     });
 
     if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
@@ -71,9 +70,7 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
     });
 
     console.log("UPLOAD_MEDIA_SUCCESS", {
-      url: result.secure_url,
-      resourceType: result.resource_type,
-      publicId: result.public_id
+      resourceType: result.resource_type
     });
 
     return res.json({
@@ -91,7 +88,7 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
 
     return res.status(500).json({
       ok: false,
-      error: error?.message || "UPLOAD_MEDIA_ERROR"
+      error: "UPLOAD_MEDIA_ERROR"
     });
   }
 });
