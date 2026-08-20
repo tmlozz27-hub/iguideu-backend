@@ -263,7 +263,7 @@ export async function processGuidePayout(bookingId) {
       },
       {
         $set: {
-          guidePayoutStatus: "PROCESSING",
+          guidePayoutStatus: "READY",
           guidePayoutError: String(error?.code || "STRIPE_TRANSFER_FAILED")
         }
       }
