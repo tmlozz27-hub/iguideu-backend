@@ -114,6 +114,8 @@ router.post("/webhook", async (req, res) => {
         booking.status = "PAID";
         booking.stripePaymentIntentId = paymentIntentId || booking.stripePaymentIntentId;
         booking.paidAt = new Date();
+        booking.guidePayoutAmountCents = Math.round(expectedAmountCents * 0.9);
+        booking.guidePayoutStatus = "NOT_READY";
 
         await booking.save({ validateBeforeSave: false });
 

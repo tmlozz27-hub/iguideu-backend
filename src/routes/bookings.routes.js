@@ -6,31 +6,7 @@ import { requireAuth } from "../middleware/auth.js"
 const router = express.Router()
 const stripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim()
 const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null
-const BookingSchema = new mongoose.Schema(
-  {
-    travelerName: { type: String, default: "" },
-    travelerEmail: { type: String, required: true, index: true },
-    guideId: { type: String, required: true, index: true },
-    date: { type: String, required: true },
-    hours: { type: Number, required: true, min: 0.25 },
-    currency: { type: String, default: "usd" },
-    price: { type: Number, required: true, min: 0 },
-    amountCents: { type: Number, required: true, min: 0 },
-    status: { type: String, default: "PENDING", index: true },
-    total: { type: Number, default: 0 },
-    totalAmount: { type: Number, default: 0 },
-    amount: { type: Number, default: 0 },
-    stripePaymentIntentId: { type: String, default: null },
-
-    paidAt: { type: Date, default: null },
-    completedAt: { type: Date, default: null },
-    cancelledAt: { type: Date, default: null }
-  },
-  { timestamps: true }
-)
-
-const Booking =
-  mongoose.models.Booking || mongoose.model("Booking", BookingSchema, "bookings")
+const Booking = (await import("../models/Booking.js")).default
 
 function toNumber(v, fallback = 0) {
   const n = Number(v)
@@ -75,7 +51,9 @@ async function markCompletedPaidBookings() {
     {
       $set: {
         status: "COMPLETED",
-        completedAt: new Date()
+        completedAt: new Date(),
+        guidePayoutStatus: "READY",
+        guidePayoutEligibleAt: new Date()
       }
     }
   )
