@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import Stripe from "stripe";
 import { recordGuidePaidBooking } from "../services/guide-membership.js";
 
@@ -72,7 +73,7 @@ router.post("/webhook", async (req, res) => {
 
       let booking = null;
 
-      if (bookingId) {
+      if (bookingId && mongoose.Types.ObjectId.isValid(bookingId)) {
         booking = await Booking.findById(bookingId);
       }
 
