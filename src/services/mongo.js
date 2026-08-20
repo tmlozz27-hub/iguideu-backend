@@ -64,6 +64,29 @@ function defineModels() {
   }
 }
 
+async function ensureSecurityIndexes() {
+  const db = mongoose.connection?.db;
+
+  if (!db) {
+    throw new Error("MONGO_DB_NOT_AVAILABLE");
+  }
+
+  const resetTokens = db.collection("password_reset_tokens");
+
+  await resetTokens.createIndex(
+    { tokenHash: 1 },
+    { unique: true, name: "tokenHash_unique" }
+  );
+
+  await resetTokens.createIndex(
+    { expiresAt: 1 },
+    {
+      expireAfterSeconds: 0,
+      name: "expiresAt_ttl"
+    }
+  );
+}
+
 export async function connectMongo() {
   const uri = process.env.MONGO_URI || process.env.MONGODB_URI
 
@@ -89,6 +112,7 @@ export async function connectMongo() {
 
   cached.conn = await cached.promise
   defineModels()
+  await ensureSecurityIndexes()
 
   console.log("MongoDB OK -> dbName=" + (cached.conn?.name || "connected"))
   return cached.conn

@@ -447,7 +447,11 @@ router.post("/register", registerLimiter, async (req, res) => {
     return res.status(500).json({ ok: false, message: "REGISTER_ERROR" });
   }
 });
-const resetTokens = new Map();
+const passwordResetTokensCollection = () =>
+  mongoose.connection.db.collection("password_reset_tokens");
+
+const hashResetToken = (token) =>
+  crypto.createHash("sha256").update(String(token)).digest("hex");
 
 async function sendPasswordResetEmail(to, token) {
   const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
@@ -501,9 +505,18 @@ router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
 
     const token = crypto.randomBytes(32).toString("hex");
 
-    resetTokens.set(token, {
+    const tokenHash = hashResetToken(token);
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 30);
+
+    await passwordResetTokensCollection().deleteMany({
+      userId: String(user._id)
+    });
+
+    await passwordResetTokensCollection().insertOne({
+      tokenHash,
       userId: String(user._id),
-      expiresAt: Date.now() + 1000 * 60 * 30
+      expiresAt,
+      createdAt: new Date()
     });
 
     const emailSent = await sendPasswordResetEmail(email, token);
@@ -532,9 +545,14 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, error: "PASSWORD_MIN_6" });
     }
 
-    const entry = resetTokens.get(token);
+    const tokenHash = hashResetToken(token);
 
-    if (!entry || entry.expiresAt < Date.now()) {
+    const entry = await passwordResetTokensCollection().findOneAndDelete({
+      tokenHash,
+      expiresAt: { $gt: new Date() }
+    });
+
+    if (!entry?.userId) {
       return res.status(400).json({ ok: false, error: "TOKEN_INVALID_OR_EXPIRED" });
     }
 
@@ -550,7 +568,7 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
       }
     );
 
-    resetTokens.delete(token);
+
 
     if (!result.matchedCount) {
       return res.status(400).json({ ok: false, error: "TOKEN_INVALID_OR_EXPIRED" });
