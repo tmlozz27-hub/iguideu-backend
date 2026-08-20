@@ -23,6 +23,26 @@ async function main() {
     throw new Error("TEST_MODE_REQUIRED_REFUSING_NON_TEST_STRIPE_KEY");
   }
 
+  const mongoUri = String(
+    process.env.MONGO_URI || process.env.MONGODB_URI || ""
+  ).trim();
+
+  if (!mongoUri) {
+    throw new Error("MONGO_URI_REQUIRED");
+  }
+
+  let mongoDatabase = "";
+
+  try {
+    mongoDatabase = new URL(mongoUri).pathname.replace(/^\//, "");
+  } catch {
+    throw new Error("INVALID_MONGO_URI");
+  }
+
+  if (mongoDatabase !== "iguideu20_connect_test") {
+    throw new Error("MONGO_TEST_DATABASE_REQUIRED");
+  }
+
   const connection = await connectMongo();
 
   if (!connection || mongoose.connection.readyState !== 1) {
