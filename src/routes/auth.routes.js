@@ -371,6 +371,19 @@ router.post("/login", loginLimiter, async (req, res) => {
 
     if (!valid) return res.status(401).json({ ok: false, message: "INVALID_CREDENTIALS" });
 
+    if (!String(user.password || "").startsWith(PASSWORD_PREFIX)) {
+      const migratedPassword = hashPassword(password);
+
+      const migration = await usersCollection().updateOne(
+        { _id: user._id, password: user.password },
+        { $set: { password: migratedPassword } }
+      );
+
+      if (migration.modifiedCount === 1) {
+        user.password = migratedPassword;
+      }
+    }
+
     const token = makeToken(user);
 
     return res.json({
