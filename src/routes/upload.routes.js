@@ -9,6 +9,19 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 75 * 1024 * 1024
+  },
+  fileFilter: (req, file, cb) => {
+    const mime = String(file?.mimetype || "");
+    const isVideo = mime.startsWith("video/");
+    const isImage = mime.startsWith("image/");
+
+    if (!isVideo && !isImage) {
+      req.uploadRejectReason = "UNSUPPORTED_FILE_TYPE";
+      req.uploadRejectedMime = mime;
+      return cb(null, false);
+    }
+
+    return cb(null, true);
   }
 });
 
@@ -42,6 +55,14 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
       return res.status(500).json({
         ok: false,
         error: "CLOUDINARY_NOT_CONFIGURED"
+      });
+    }
+
+    if (req.uploadRejectReason === "UNSUPPORTED_FILE_TYPE") {
+      return res.status(400).json({
+        ok: false,
+        error: "UNSUPPORTED_FILE_TYPE",
+        mimetype: String(req.uploadRejectedMime || "")
       });
     }
 
