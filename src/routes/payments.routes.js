@@ -141,7 +141,7 @@ router.post("/pay-test", requireAuth, async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({
-      error: error?.message || "PAY_TEST_ERROR"
+      error: "PAY_TEST_ERROR"
     });
   }
 });
@@ -221,7 +221,7 @@ router.post("/create-intent", requireAuth, async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({
-      error: error?.message || "CREATE_INTENT_ERROR"
+      error: "CREATE_INTENT_ERROR"
     });
   }
 });

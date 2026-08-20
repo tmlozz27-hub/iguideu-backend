@@ -124,7 +124,7 @@ router.get("/messages", requireAuth, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      error: error?.message || "CHAT_MESSAGES_ERROR"
+      error: "CHAT_MESSAGES_ERROR"
     })
   }
 })
@@ -201,7 +201,7 @@ router.post("/messages", requireAuth, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      error: error?.message || "CHAT_SEND_ERROR"
+      error: "CHAT_SEND_ERROR"
     })
   }
 })

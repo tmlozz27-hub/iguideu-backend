@@ -109,7 +109,7 @@ router.get("/", requireAuth, async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "BOOKINGS_FETCH_FAILED",
-      detail: err?.message || "Internal Server Error"
+      detail: "Internal Server Error"
     })
   }
 })
@@ -196,7 +196,7 @@ router.get("/guide/me", requireAuth, async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "BOOKINGS_GUIDE_FETCH_FAILED",
-      detail: err?.message || "Internal Server Error"
+      detail: "Internal Server Error"
     })
   }
 })
@@ -253,7 +253,7 @@ router.post("/", requireAuth, async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "BOOKING_CREATE_FAILED",
-      detail: err?.message || "Internal Server Error"
+      detail: "Internal Server Error"
     })
   }
 })
@@ -340,7 +340,7 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "BOOKING_CANCEL_FAILED",
-      detail: err?.message || "Internal Server Error"
+      detail: "Internal Server Error"
     })
   }
 })
