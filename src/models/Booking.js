@@ -42,6 +42,7 @@ const BookingSchema = new mongoose.Schema(
       enum: ["NOT_READY", "READY", "PROCESSING", "TRANSFERRED", "FAILED"]
     },
     guidePayoutEligibleAt: { type: Date, default: null },
+    guidePayoutProcessingAt: { type: Date, default: null },
     guidePayoutTransferredAt: { type: Date, default: null },
     guidePayoutError: { type: String, default: "" },
 
