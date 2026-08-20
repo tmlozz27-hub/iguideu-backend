@@ -71,10 +71,7 @@ router.post("/pay-test", requireAuth, async (req, res) => {
     const parsed = pickAmount(req.body);
 
     if (!parsed.ok) {
-      return res.status(400).json({
-        error: "AMOUNT_REQUIRED",
-        received: req.body || null
-      });
+      return res.status(400).json({ error: "AMOUNT_REQUIRED" });
     }
 
     const db = mongoose.connection?.db;
