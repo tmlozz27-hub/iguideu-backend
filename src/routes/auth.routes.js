@@ -535,7 +535,7 @@ router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
       emailSent
     });
   } catch (err) {
-    console.error("FORGOT_PASSWORD_ERROR", err);
+    console.error("FORGOT_PASSWORD_ERROR", { message: err?.message || "", name: err?.name || "", code: err?.code || "" });
     return res.status(500).json({ ok: false, error: "FORGOT_PASSWORD_FAILED" });
   }
 });
@@ -584,7 +584,7 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
 
     return res.json({ ok: true, message: "Password updated." });
   } catch (err) {
-    console.error("RESET_PASSWORD_ERROR", err);
+    console.error("RESET_PASSWORD_ERROR", { message: err?.message || "", name: err?.name || "", code: err?.code || "" });
     return res.status(500).json({ ok: false, error: "RESET_PASSWORD_FAILED" });
   }
 });

@@ -335,7 +335,7 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
         : null
     })
   } catch (err) {
-    console.error("BOOKING_CANCEL_FAILED", err)
+    console.error("BOOKING_CANCEL_FAILED", { message: err?.message || "", name: err?.name || "", code: err?.code || "" })
 
     return res.status(500).json({
       ok: false,
