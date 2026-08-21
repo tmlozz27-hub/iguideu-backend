@@ -144,6 +144,14 @@ function authRateLimit({ windowMs = 15 * 60 * 1000, max = 5 } = {}) {
       .trim();
 
     const now = Date.now();
+
+    if (authRateLimitStore.size > 1000) {
+      for (const [storedKey, storedValue] of authRateLimitStore.entries()) {
+        if (!storedValue || now > storedValue.resetAt) {
+          authRateLimitStore.delete(storedKey);
+        }
+      }
+    }
     const key = `${ip}:${req.path}`;
 
     const current = authRateLimitStore.get(key) || {
