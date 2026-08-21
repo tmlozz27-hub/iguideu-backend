@@ -106,7 +106,7 @@ router.get("/me", requireAuth, async (req, res) => {
   } catch (e) {
     return res.status(500).json({
       ok: false,
-      error: e?.message || "guide me error"
+      error: "GUIDE_ME_ERROR"
     });
   }
 });
@@ -210,7 +210,7 @@ router.patch("/me", requireAuth, async (req, res) => {
   } catch (e) {
     return res.status(500).json({
       ok: false,
-      error: e?.message || "guide patch me error"
+      error: "GUIDE_PATCH_ME_ERROR"
     });
   }
 });
@@ -282,7 +282,7 @@ router.get("/", async (req, res) => {
     return res.json(docs.map(toPublicGuide));
   } catch (e) {
     return res.status(500).json({
-      error: e?.message || "guides error"
+      error: "GUIDES_FETCH_ERROR"
     });
   }
 });
@@ -366,7 +366,7 @@ router.get("/nearby", async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({
-      error: e?.message || "guides nearby error"
+      error: "GUIDES_NEARBY_ERROR"
     });
   }
 });
@@ -480,7 +480,7 @@ router.post("/", requireAuth, async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({
-      error: e?.message || "create guide error"
+      error: "GUIDE_CREATE_ERROR"
     });
   }
 });
