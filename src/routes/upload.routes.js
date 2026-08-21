@@ -51,13 +51,6 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
       contentType: req.headers["content-type"],
     });
 
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-      return res.status(500).json({
-        ok: false,
-        error: "CLOUDINARY_NOT_CONFIGURED"
-      });
-    }
-
     if (req.uploadRejectReason === "UNSUPPORTED_FILE_TYPE") {
       return res.status(400).json({
         ok: false,
@@ -72,6 +65,13 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
         error: "FILE_REQUIRED"
       });
     }
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+      return res.status(500).json({
+        ok: false,
+        error: "CLOUDINARY_NOT_CONFIGURED"
+      });
+    }
+
 
     const mime = String(req.file.mimetype || "");
     const isVideo = mime.startsWith("video/");
