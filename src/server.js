@@ -60,6 +60,17 @@ app.use("/api/chat", chatRoutes)
 app.use("/api/upload", uploadRoutes)
 
 Sentry.setupExpressErrorHandler(app)
+
+app.use((err, req, res, next) => {
+  if (err?.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({
+      ok: false,
+      error: "FILE_TOO_LARGE"
+    })
+  }
+
+  return next(err)
+})
 const HOST = process.env.HOST || "0.0.0.0"
 const PORT = Number(process.env.PORT || 4020)
 
