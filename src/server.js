@@ -69,7 +69,17 @@ app.use((err, req, res, next) => {
     })
   }
 
-  return next(err)
+  if (err instanceof SyntaxError && err?.status === 400 && "body" in err) {
+    return res.status(400).json({
+      ok: false,
+      error: "INVALID_JSON"
+    })
+  }
+
+  return res.status(500).json({
+    ok: false,
+    error: "INTERNAL_SERVER_ERROR"
+  })
 })
 const HOST = process.env.HOST || "0.0.0.0"
 const PORT = Number(process.env.PORT || 4020)
