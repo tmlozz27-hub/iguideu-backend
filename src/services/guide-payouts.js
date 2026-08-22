@@ -1,4 +1,4 @@
-﻿import mongoose from "mongoose";
+import mongoose from "mongoose";
 import Stripe from "stripe";
 
 const PAYOUT_PROCESSING_TIMEOUT_MS = 15 * 60 * 1000;
@@ -205,6 +205,9 @@ export async function processGuidePayout(bookingId) {
         guidePayoutStatus: "PROCESSING",
         guidePayoutProcessingAt: new Date(),
         guidePayoutError: ""
+      },
+      $inc: {
+        guidePayoutAttempt: 1
       }
     }
   );
@@ -212,6 +215,13 @@ export async function processGuidePayout(bookingId) {
   if (!claim.modifiedCount) {
     return { ok: true, skipped: true, reason: "payout_already_claimed" };
   }
+
+  const claimedBooking = await bookingsCol.findOne(
+    { _id: objectId },
+    { projection: { guidePayoutAttempt: 1 } }
+  );
+
+  const payoutAttempt = Number(claimedBooking?.guidePayoutAttempt || 1);
 
   const stripe = new Stripe(stripeSecretKey);
 
@@ -228,7 +238,7 @@ export async function processGuidePayout(bookingId) {
         }
       },
       {
-        idempotencyKey: `guide-payout-${booking._id}`
+        idempotencyKey: `guide-payout-${booking._id}-attempt-${payoutAttempt}`
       }
     );
 
