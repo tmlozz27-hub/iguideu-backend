@@ -144,7 +144,7 @@ router.post("/me/connect/onboarding", requireAuth, async (req, res) => {
           }
         },
         {
-          idempotencyKey: `guide-connect-account-${guide._id}`
+          idempotencyKey: `guide-connect-account-${guide._id}-v2`
         }
       );
 
