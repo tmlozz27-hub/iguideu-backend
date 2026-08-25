@@ -610,8 +610,10 @@ router.post("/", requireAuth, async (req, res) => {
       password,
       avatarUrl,
       mediaDraft,
-      guideType,
-      rates
+            guideType,
+      rates,
+      lat,
+      lng
     } = req.body || {};
 
     const cleanPassword = String(password || "").trim();
@@ -685,6 +687,8 @@ router.post("/", requireAuth, async (req, res) => {
       mediaDraft: mediaDraft || null,
       guideType: guideType ? String(guideType).trim() : "certified",
       rates: rates || null,
+lat: Number(lat),
+      lng: Number(lng),
       active: active !== false,
       createdAt: now,
       updatedAt: now
