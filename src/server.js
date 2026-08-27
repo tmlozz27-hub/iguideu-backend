@@ -1,8 +1,67 @@
 import * as Sentry from "@sentry/node"
 
+const SENSITIVE_KEYS = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "password",
+  "oldpassword",
+  "newpassword",
+  "token",
+  "accesstoken",
+  "refreshtoken",
+  "identitytoken",
+  "stripesignature",
+  "stripe-signature",
+  "clientsecret",
+  "secret",
+  "api_key",
+  "apikey"
+])
+
+function sanitizeSensitive(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeSensitive(item))
+  }
+
+  if (!value || typeof value !== "object") {
+    return value
+  }
+
+  const output = {}
+
+  for (const [key, item] of Object.entries(value)) {
+    const normalizedKey = String(key)
+      .replace(/[_-]/g, "")
+      .toLowerCase()
+
+    if (
+      SENSITIVE_KEYS.has(key) ||
+      SENSITIVE_KEYS.has(normalizedKey)
+    ) {
+      output[key] = "[REDACTED]"
+      continue
+    }
+
+    output[key] = sanitizeSensitive(item)
+  }
+
+  return output
+}
+
 Sentry.init({
-  dsn: process.env.SENTRY_DSN
+  dsn: process.env.SENTRY_DSN,
+  sendDefaultPii: false,
+
+  beforeSend(event) {
+    return sanitizeSensitive(event)
+  },
+
+  beforeBreadcrumb(breadcrumb) {
+    return sanitizeSensitive(breadcrumb)
+  }
 })
+
 import express from "express"
 import cors from "cors"
 import helmet from "helmet"
@@ -43,7 +102,7 @@ app.use((req, res, next) => {
     u.startsWith("/api/reservations") ||
     u.startsWith("/api/chat")
   ) {
-    console.log(new Date().toISOString(), req.method, u)
+    console.log(new Date().toISOString(), req.method, u.split("?")[0])
   }
   next()
 })
@@ -81,6 +140,7 @@ app.use((err, req, res, next) => {
     error: "INTERNAL_SERVER_ERROR"
   })
 })
+
 const HOST = process.env.HOST || "0.0.0.0"
 const PORT = Number(process.env.PORT || 4020)
 
