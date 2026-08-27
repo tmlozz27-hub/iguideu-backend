@@ -112,6 +112,13 @@ router.get("/messages", requireAuth, async (req, res) => {
       })
     }
 
+    if (String(booking.status || "").toUpperCase() !== "PAID") {
+      return res.status(403).json({
+        ok: false,
+        error: "CHAT_REQUIRES_PAID_BOOKING"
+      })
+    }
+
     const rows = await ChatMessage.find({ bookingId })
       .sort({ createdAt: 1 })
       .limit(limit)
@@ -124,7 +131,7 @@ router.get("/messages", requireAuth, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      error: error?.message || "CHAT_MESSAGES_ERROR"
+      error: "CHAT_MESSAGES_ERROR"
     })
   }
 })
@@ -201,7 +208,7 @@ router.post("/messages", requireAuth, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      error: error?.message || "CHAT_SEND_ERROR"
+      error: "CHAT_SEND_ERROR"
     })
   }
 })

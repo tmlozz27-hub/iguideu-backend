@@ -5,10 +5,69 @@ import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
+const uploadRateLimitStore = new Map();
+
+function uploadRateLimit({ windowMs = 15 * 60 * 1000, max = 20 } = {}) {
+  return (req, res, next) => {
+    const ip = String(req.ip || req.socket?.remoteAddress || "unknown");
+
+    const now = Date.now();
+
+    if (uploadRateLimitStore.size > 1000) {
+      for (const [storedKey, storedValue] of uploadRateLimitStore.entries()) {
+        if (!storedValue || now > storedValue.resetAt) {
+          uploadRateLimitStore.delete(storedKey);
+        }
+      }
+    }
+
+    const key = ip;
+    const current = uploadRateLimitStore.get(key) || {
+      count: 0,
+      resetAt: now + windowMs,
+    };
+
+    if (now > current.resetAt) {
+      current.count = 0;
+      current.resetAt = now + windowMs;
+    }
+
+    current.count += 1;
+    uploadRateLimitStore.set(key, current);
+
+    if (current.count > max) {
+      return res.status(429).json({
+        ok: false,
+        error: "TOO_MANY_REQUESTS",
+      });
+    }
+
+    next();
+  };
+}
+
+const mediaUploadLimiter = uploadRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+});
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 75 * 1024 * 1024
+  },
+  fileFilter: (req, file, cb) => {
+    const mime = String(file?.mimetype || "");
+    const isVideo = mime.startsWith("video/");
+    const isImage = mime.startsWith("image/");
+
+    if (!isVideo && !isImage) {
+      req.uploadRejectReason = "UNSUPPORTED_FILE_TYPE";
+      req.uploadRejectedMime = mime;
+      return cb(null, false);
+    }
+
+    return cb(null, true);
   }
 });
 
@@ -71,9 +130,7 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
     });
 
     console.log("UPLOAD_MEDIA_SUCCESS", {
-      url: result.secure_url,
-      resourceType: result.resource_type,
-      publicId: result.public_id
+      resourceType: result.resource_type
     });
 
     return res.json({
@@ -91,7 +148,7 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
 
     return res.status(500).json({
       ok: false,
-      error: error?.message || "UPLOAD_MEDIA_ERROR"
+      error: "UPLOAD_MEDIA_ERROR"
     });
   }
 });

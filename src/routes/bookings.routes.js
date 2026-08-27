@@ -109,7 +109,7 @@ router.get("/", requireAuth, async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "BOOKINGS_FETCH_FAILED",
-      detail: err?.message || "Internal Server Error"
+      detail: "Internal Server Error"
     })
   }
 })
@@ -196,7 +196,7 @@ router.get("/guide/me", requireAuth, async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "BOOKINGS_GUIDE_FETCH_FAILED",
-      detail: err?.message || "Internal Server Error"
+      detail: "Internal Server Error"
     })
   }
 })
@@ -227,8 +227,16 @@ router.post("/", requireAuth, async (req, res) => {
     if (!hours || hours <= 0) {
       return res.status(400).json({ ok: false, error: "hours must be > 0" })
     }
-    if (price < 0) {
-      return res.status(400).json({ ok: false, error: "price must be >= 0" })
+
+    if (idempotencyKey) {
+      const existing = await Booking.findOne({
+        travelerEmail,
+        idempotencyKey
+      })
+
+      if (existing) {
+        return res.status(200).json(existing)
+      }
     }
 
     const amountCents = Math.round(price * 100)
@@ -245,6 +253,7 @@ router.post("/", requireAuth, async (req, res) => {
       total: price,
       totalAmount: price,
       amount: price,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
       status: "PENDING"
     })
 
@@ -253,7 +262,7 @@ router.post("/", requireAuth, async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "BOOKING_CREATE_FAILED",
-      detail: err?.message || "Internal Server Error"
+      detail: "Internal Server Error"
     })
   }
 })
@@ -282,11 +291,18 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
     }
 
     if (booking.status === "CANCELLED") {
-      return res.status(400).json({
-        ok: false,
-        error: "BOOKING_ALREADY_CANCELLED"
-      })
-    }
+  return res.status(400).json({
+    ok: false,
+    error: "BOOKING_ALREADY_CANCELLED"
+  })
+}
+
+if (booking.status === "COMPLETED") {
+  return res.status(409).json({
+    ok: false,
+    error: "BOOKING_ALREADY_COMPLETED"
+  })
+}
 
     const paymentIntentId = String(
       booking.stripePaymentIntentId || ""
@@ -335,19 +351,25 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
         : null
     })
   } catch (err) {
-    console.error("BOOKING_CANCEL_FAILED", err)
+    console.error("BOOKING_CANCEL_FAILED", {
+      message: err?.message || "",
+      name: err?.name || "",
+      code: err?.code || ""
+    })
 
     return res.status(500).json({
       ok: false,
       error: "BOOKING_CANCEL_FAILED",
-      detail: err?.message || "Internal Server Error"
+      detail: "Internal Server Error"
     })
   }
 })
+
 router.get("/:id", requireAuth, async (_req, res) => {
   return res.status(403).json({
     ok: false,
     error: "BOOKING_DIRECT_FETCH_DISABLED"
   })
 })
+
 export default router

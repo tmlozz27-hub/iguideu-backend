@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import Stripe from "stripe";
 import { recordGuidePaidBooking } from "../services/guide-membership.js";
 
@@ -28,10 +29,24 @@ async function loadBookingModel() {
   }
 }
 
+async function loadStripeEventModel() {
+  try {
+    const mod = await import("../models/StripeEvent.js");
+    return mod.default || mod.StripeEvent || null;
+  } catch {
+    return null;
+  }
+}
+
 router.post("/webhook", async (req, res) => {
   try {
-    if (!stripe) return res.status(500).send("stripe_not_configured");
-    if (!STRIPE_WEBHOOK_SECRET) return res.status(500).send("webhook_secret_missing");
+    if (!stripe) {
+      return res.status(500).send("stripe_not_configured");
+    }
+
+    if (!STRIPE_WEBHOOK_SECRET) {
+      return res.status(500).send("webhook_secret_missing");
+    }
 
     const sig = req.headers["stripe-signature"];
 
@@ -47,15 +62,44 @@ router.post("/webhook", async (req, res) => {
       return res.status(400).send("signature_verification_failed");
     }
 
+    const eventId = event?.id ? String(event.id).trim() : "";
+
+    if (!eventId) {
+      return res.status(400).send("event_id_missing");
+    }
+
+    const StripeEvent = await loadStripeEventModel();
+
+    if (!StripeEvent) {
+      console.log("STRIPE EVENT MODEL NOT LOADED");
+      return res.status(500).send("stripe_event_model_not_loaded");
+    }
+
+    const existingEvent = await StripeEvent.findOne({
+      eventId,
+    }).lean();
+
+    if (existingEvent) {
+      return res.status(200).json({
+        received: true,
+        type: event?.type || "",
+        duplicate: true,
+      });
+    }
+
     const type = event?.type ? String(event.type) : "";
     const obj = event?.data?.object || {};
     const paymentIntentId = obj?.id ? String(obj.id) : "";
-    const bookingId = obj?.metadata?.bookingId ? String(obj.metadata.bookingId) : "";
+    const bookingId = obj?.metadata?.bookingId
+      ? String(obj.metadata.bookingId)
+      : "";
 
     console.log(
       new Date().toISOString(),
       "WEBHOOK",
       type,
+      "eventId=",
+      eventId,
       "pi=",
       paymentIntentId,
       "bookingId=",
@@ -72,13 +116,13 @@ router.post("/webhook", async (req, res) => {
 
       let booking = null;
 
-      if (bookingId) {
+      if (bookingId && mongoose.Types.ObjectId.isValid(bookingId)) {
         booking = await Booking.findById(bookingId);
       }
 
       if (!booking && paymentIntentId) {
         booking = await Booking.findOne({
-          stripePaymentIntentId: paymentIntentId
+          stripePaymentIntentId: paymentIntentId,
         });
       }
 
@@ -88,49 +132,190 @@ router.post("/webhook", async (req, res) => {
           paymentIntentId,
           bookingId
         );
-      } else {
-        const expectedPaymentIntentId = String(booking.stripePaymentIntentId || "").trim();
-        const expectedAmountCents = Number(booking.amountCents || 0);
-        const expectedCurrency = String(booking.currency || "usd").trim().toLowerCase();
-        const receivedAmountCents = Number(obj?.amount_received || 0);
-        const receivedCurrency = String(obj?.currency || "").trim().toLowerCase();
 
-        if (!expectedPaymentIntentId || expectedPaymentIntentId !== paymentIntentId) {
-          console.log("WEBHOOK_PAYMENT_INTENT_MISMATCH", String(booking._id), paymentIntentId);
-          return res.status(400).json({ received: false, error: "PAYMENT_INTENT_MISMATCH" });
-        }
+        await StripeEvent.create({
+          eventId,
+          type,
+          processedAt: new Date(),
+        });
 
-        if (!Number.isFinite(expectedAmountCents) || expectedAmountCents <= 0 || receivedAmountCents !== expectedAmountCents) {
-          console.log("WEBHOOK_AMOUNT_MISMATCH", String(booking._id), receivedAmountCents);
-          return res.status(400).json({ received: false, error: "AMOUNT_MISMATCH" });
-        }
+        return res.status(200).json({
+          received: true,
+          type,
+        });
+      }
 
-        if (!receivedCurrency || receivedCurrency !== expectedCurrency) {
-          console.log("WEBHOOK_CURRENCY_MISMATCH", String(booking._id), receivedCurrency);
-          return res.status(400).json({ received: false, error: "CURRENCY_MISMATCH" });
-        }
+      const expectedPaymentIntentId = String(
+        booking.stripePaymentIntentId || ""
+      ).trim();
 
-        booking.status = "PAID";
-        booking.stripePaymentIntentId = paymentIntentId || booking.stripePaymentIntentId;
-        booking.paidAt = new Date();
+      const expectedAmountCents = Number(
+        booking.amountCents || 0
+      );
 
-        await booking.save({ validateBeforeSave: false });
+      const expectedCurrency = String(
+        booking.currency || "usd"
+      )
+        .trim()
+        .toLowerCase();
 
-        const membershipTracking = await recordGuidePaidBooking(booking, "stripe-webhook");
+      const receivedAmountCents = Number(
+        obj?.amount_received || 0
+      );
 
+      const receivedCurrency = String(
+        obj?.currency || ""
+      )
+        .trim()
+        .toLowerCase();
+
+      if (
+        !expectedPaymentIntentId ||
+        expectedPaymentIntentId !== paymentIntentId
+      ) {
         console.log(
-          "BOOKING UPDATED TO PAID",
+          "WEBHOOK_PAYMENT_INTENT_MISMATCH",
           String(booking._id),
-          paymentIntentId,
-          "membershipTracking=",
-          JSON.stringify(membershipTracking)
+          paymentIntentId
         );
+
+        return res.status(400).json({
+          received: false,
+          error: "PAYMENT_INTENT_MISMATCH",
+        });
+      }
+
+      if (
+        !Number.isFinite(expectedAmountCents) ||
+        expectedAmountCents <= 0 ||
+        receivedAmountCents !== expectedAmountCents
+      ) {
+        console.log(
+          "WEBHOOK_AMOUNT_MISMATCH",
+          String(booking._id),
+          receivedAmountCents
+        );
+
+        return res.status(400).json({
+          received: false,
+          error: "AMOUNT_MISMATCH",
+        });
+      }
+
+      if (
+        !receivedCurrency ||
+        receivedCurrency !== expectedCurrency
+      ) {
+        console.log(
+          "WEBHOOK_CURRENCY_MISMATCH",
+          String(booking._id),
+          receivedCurrency
+        );
+
+        return res.status(400).json({
+          received: false,
+          error: "CURRENCY_MISMATCH",
+        });
+      }
+
+      if (
+        booking.status !== "PENDING" &&
+        booking.status !== "CONFIRMED"
+      ) {
+        console.log(
+          "WEBHOOK_STATE_ALREADY_PROCESSED",
+          String(booking._id),
+          booking.status
+        );
+
+        await StripeEvent.create({
+          eventId,
+          type,
+          processedAt: new Date(),
+        });
+
+        return res.status(200).json({
+          received: true,
+          type,
+          skipped: true,
+          reason: "booking_state_already_processed",
+        });
+      }
+
+      const now = new Date();
+
+      const updatedBooking = await Booking.findOneAndUpdate(
+        {
+          _id: booking._id,
+          status: {
+            $in: ["PENDING", "CONFIRMED"],
+          },
+          stripePaymentIntentId: paymentIntentId,
+          amountCents: expectedAmountCents,
+          currency: expectedCurrency,
+        },
+        {
+          $set: {
+            status: "PAID",
+            stripePaymentIntentId: paymentIntentId,
+            paidAt: now,
+          },
+        },
+        {
+          new: true,
+          runValidators: false,
+        }
+      );
+
+      if (!updatedBooking) {
+        console.log(
+          "WEBHOOK_STATE_RACE_OR_ALREADY_PROCESSED",
+          String(booking._id)
+        );
+
+        await StripeEvent.create({
+          eventId,
+          type,
+          processedAt: new Date(),
+        });
+
+        return res.status(200).json({
+          received: true,
+          type,
+          skipped: true,
+          reason: "booking_state_race_or_already_processed",
+        });
+      }
+
+      const membershipTracking = await recordGuidePaidBooking(
+        updatedBooking,
+        "stripe-webhook"
+      );
+
+      console.log(
+        "BOOKING UPDATED TO PAID",
+        String(updatedBooking._id),
+        paymentIntentId,
+        "membershipTracking=",
+        JSON.stringify(membershipTracking)
+      );
+    }
+
+    try {
+      await StripeEvent.create({
+        eventId,
+        type,
+        processedAt: new Date(),
+      });
+    } catch (err) {
+      if (err?.code !== 11000) {
+        throw err;
       }
     }
 
     return res.status(200).json({
       received: true,
-      type
+      type,
     });
   } catch (err) {
     console.log(

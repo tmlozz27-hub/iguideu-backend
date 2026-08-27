@@ -135,15 +135,17 @@ const authRateLimitStore = new Map();
 
 function authRateLimit({ windowMs = 15 * 60 * 1000, max = 5 } = {}) {
   return (req, res, next) => {
-    const ip = String(
-      req.headers["x-forwarded-for"] ||
-      req.socket?.remoteAddress ||
-      "unknown"
-    )
-      .split(",")[0]
-      .trim();
+    const ip = String(req.ip || req.socket?.remoteAddress || "unknown");
 
     const now = Date.now();
+
+    if (authRateLimitStore.size > 1000) {
+      for (const [storedKey, storedValue] of authRateLimitStore.entries()) {
+        if (!storedValue || now > storedValue.resetAt) {
+          authRateLimitStore.delete(storedKey);
+        }
+      }
+    }
     const key = `${ip}:${req.path}`;
 
     const current = authRateLimitStore.get(key) || {
@@ -287,7 +289,6 @@ router.put("/me", requireAuth, async (req, res) => {
     return res.status(500).json({ ok: false, message: "UPDATE_ERROR" });
   }
 });
-
 router.post("/apple", appleLimiter, async (req, res) => {
   try {
     const identityToken = req.body?.identityToken;
@@ -301,7 +302,7 @@ router.post("/apple", appleLimiter, async (req, res) => {
     }
 
     const decoded = await verifyAppleIdentityToken(identityToken);
-    const email = String(decoded.email || bodyEmail || "")
+    const email = String(decoded.email || "")
       .trim()
       .toLowerCase();
 
@@ -371,6 +372,19 @@ router.post("/login", loginLimiter, async (req, res) => {
 
     if (!valid) return res.status(401).json({ ok: false, message: "INVALID_CREDENTIALS" });
 
+    if (!String(user.password || "").startsWith(PASSWORD_PREFIX)) {
+      const migratedPassword = hashPassword(password);
+
+      const migration = await usersCollection().updateOne(
+        { _id: user._id, password: user.password },
+        { $set: { password: migratedPassword } }
+      );
+
+      if (migration.modifiedCount === 1) {
+        user.password = migratedPassword;
+      }
+    }
+
     const token = makeToken(user);
 
     return res.json({
@@ -434,7 +448,11 @@ router.post("/register", registerLimiter, async (req, res) => {
     return res.status(500).json({ ok: false, message: "REGISTER_ERROR" });
   }
 });
-const resetTokens = new Map();
+const passwordResetTokensCollection = () =>
+  mongoose.connection.db.collection("password_reset_tokens");
+
+const hashResetToken = (token) =>
+  crypto.createHash("sha256").update(String(token)).digest("hex");
 
 async function sendPasswordResetEmail(to, token) {
   const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
@@ -486,11 +504,20 @@ router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
       return res.json({ ok: true, message: "If the email exists, recovery instructions were sent." });
     }
 
-    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const token = crypto.randomBytes(32).toString("hex");
 
-    resetTokens.set(token, {
+    const tokenHash = hashResetToken(token);
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 30);
+
+    await passwordResetTokensCollection().deleteMany({
+      userId: String(user._id)
+    });
+
+    await passwordResetTokensCollection().insertOne({
+      tokenHash,
       userId: String(user._id),
-      expiresAt: Date.now() + 1000 * 60 * 30
+      expiresAt,
+      createdAt: new Date()
     });
 
     const emailSent = await sendPasswordResetEmail(email, token);
@@ -501,7 +528,7 @@ router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
       emailSent
     });
   } catch (err) {
-    console.error("FORGOT_PASSWORD_ERROR", err);
+    console.error("FORGOT_PASSWORD_ERROR", { message: err?.message || "", name: err?.name || "", code: err?.code || "" });
     return res.status(500).json({ ok: false, error: "FORGOT_PASSWORD_FAILED" });
   }
 });
@@ -519,9 +546,14 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, error: "PASSWORD_MIN_6" });
     }
 
-    const entry = resetTokens.get(token);
+    const tokenHash = hashResetToken(token);
 
-    if (!entry || entry.expiresAt < Date.now()) {
+    const entry = await passwordResetTokensCollection().findOneAndDelete({
+      tokenHash,
+      expiresAt: { $gt: new Date() }
+    });
+
+    if (!entry?.userId) {
       return res.status(400).json({ ok: false, error: "TOKEN_INVALID_OR_EXPIRED" });
     }
 
@@ -537,7 +569,7 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
       }
     );
 
-    resetTokens.delete(token);
+
 
     if (!result.matchedCount) {
       return res.status(400).json({ ok: false, error: "TOKEN_INVALID_OR_EXPIRED" });
@@ -545,7 +577,7 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
 
     return res.json({ ok: true, message: "Password updated." });
   } catch (err) {
-    console.error("RESET_PASSWORD_ERROR", err);
+    console.error("RESET_PASSWORD_ERROR", { message: err?.message || "", name: err?.name || "", code: err?.code || "" });
     return res.status(500).json({ ok: false, error: "RESET_PASSWORD_FAILED" });
   }
 });

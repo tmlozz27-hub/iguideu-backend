@@ -71,10 +71,7 @@ router.post("/pay-test", requireAuth, async (req, res) => {
     const parsed = pickAmount(req.body);
 
     if (!parsed.ok) {
-      return res.status(400).json({
-        error: "AMOUNT_REQUIRED",
-        received: req.body || null
-      });
+      return res.status(400).json({ error: "AMOUNT_REQUIRED" });
     }
 
     const db = mongoose.connection?.db;
@@ -141,7 +138,7 @@ router.post("/pay-test", requireAuth, async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({
-      error: error?.message || "PAY_TEST_ERROR"
+      error: "PAY_TEST_ERROR"
     });
   }
 });
@@ -180,10 +177,16 @@ router.post("/create-intent", requireAuth, async (req, res) => {
     }
 
     if (bookingTravelerEmail !== currentUserEmail) {
-      return res.status(403).json({ error: "FORBIDDEN_BOOKING" });
-    }
+  return res.status(403).json({ error: "FORBIDDEN_BOOKING" });
+}
 
-    let amountCents = Number(booking.amountCents || 0);
+if (String(booking.status || "").toUpperCase() !== "PENDING") {
+  return res.status(409).json({
+    error: "BOOKING_NOT_PAYABLE"
+  });
+}
+
+let amountCents = Number(booking.amountCents || 0);
 
     if (!Number.isFinite(amountCents) || amountCents <= 0) {
       return res.status(400).json({
@@ -221,7 +224,7 @@ router.post("/create-intent", requireAuth, async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({
-      error: error?.message || "CREATE_INTENT_ERROR"
+      error: "CREATE_INTENT_ERROR"
     });
   }
 });

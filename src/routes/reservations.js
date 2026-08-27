@@ -1,21 +1,23 @@
-﻿import express from "express";
+import express from "express";
 import Booking from "../models/Booking.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
-function pickEmail(req) {
-  const q = (req.query && (req.query.travelerEmail || req.query.email)) || "";
-  const h = (req.headers && (req.headers["x-traveler-email"] || req.headers["x-email"])) || "";
-  const b = (req.body && (req.body.travelerEmail || req.body.email)) || "";
-  return String(q || h || b || "").trim();
-}
-
 router.get("/health", (req, res) => res.status(200).json({ ok: true }));
 
-router.get("/", async (req, res) => {
+router.get("/", requireAuth, async (req, res) => {
   try {
-    const travelerEmail = pickEmail(req);
-    if (!travelerEmail) return res.status(400).json({ ok: false, error: "EMAIL_REQUIRED" });
+    const travelerEmail = String(req.user?.email || "")
+      .trim()
+      .toLowerCase();
+
+    if (!travelerEmail) {
+      return res.status(401).json({
+        ok: false,
+        error: "UNAUTHORIZED"
+      });
+    }
 
     const list = await Booking.find({
       $or: [{ travelerEmail }, { email: travelerEmail }]
@@ -24,9 +26,16 @@ router.get("/", async (req, res) => {
       .limit(200)
       .lean();
 
-    return res.status(200).json({ ok: true, items: list, count: list.length });
+    return res.status(200).json({
+      ok: true,
+      items: list,
+      count: list.length
+    });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: "RESERVATIONS_LIST_FAILED" });
+    return res.status(500).json({
+      ok: false,
+      error: "RESERVATIONS_LIST_FAILED"
+    });
   }
 });
 

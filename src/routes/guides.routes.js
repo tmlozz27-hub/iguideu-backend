@@ -16,7 +16,6 @@ const hashPassword = (plainPassword) => {
   return `${PASSWORD_PREFIX}${salt}$${derived}`;
 };
 
-
 function authEmail(req) {
   return String(req.user?.email || "").trim().toLowerCase();
 }
@@ -67,6 +66,139 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
+/*
+ * SECURITY ONLY:
+ * Reject prototype-pollution keys anywhere inside JSON objects.
+ */
+function hasUnsafeKeys(value) {
+  if (Array.isArray(value)) {
+    return value.some((item) => hasUnsafeKeys(item));
+  }
+
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  for (const [key, item] of Object.entries(value)) {
+    if (
+      key === "__proto__" ||
+      key === "prototype" ||
+      key === "constructor"
+    ) {
+      return true;
+    }
+
+    if (hasUnsafeKeys(item)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/*
+ * SECURITY ONLY:
+ * Validate the exact mediaDraft structure currently used by the App.
+ */
+function isValidMediaDraft(value) {
+  if (value === null) {
+    return true;
+  }
+
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+
+  if (hasUnsafeKeys(value)) {
+    return false;
+  }
+
+  const allowedKeys = new Set([
+    "mainPhoto",
+    "galleryPhotos",
+    "video"
+  ]);
+
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) {
+      return false;
+    }
+  }
+
+  if (
+    value.mainPhoto !== undefined &&
+    value.mainPhoto !== null
+  ) {
+    if (
+      typeof value.mainPhoto !== "object" ||
+      Array.isArray(value.mainPhoto) ||
+      typeof value.mainPhoto.uri !== "string"
+    ) {
+      return false;
+    }
+  }
+
+  if (value.galleryPhotos !== undefined) {
+    if (!Array.isArray(value.galleryPhotos)) {
+      return false;
+    }
+
+    if (
+      value.galleryPhotos.length > 5 ||
+      value.galleryPhotos.some(
+        (item) =>
+          !item ||
+          typeof item !== "object" ||
+          Array.isArray(item) ||
+          typeof item.uri !== "string"
+      )
+    ) {
+      return false;
+    }
+  }
+
+  if (
+    value.video !== undefined &&
+    value.video !== null
+  ) {
+    if (
+      typeof value.video !== "object" ||
+      Array.isArray(value.video) ||
+      typeof value.video.uri !== "string"
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/*
+ * SECURITY ONLY:
+ * rates is currently not sent by the mobile profile flow.
+ * We therefore do not invent a business schema.
+ * We only reject prototype-pollution payloads and require
+ * JSON object/array data if supplied.
+ */
+function isValidRates(value) {
+  if (value === null) {
+    return true;
+  }
+
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
+    return false;
+  }
+
+  return !hasUnsafeKeys(value);
+}
+
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const db = mongoose.connection?.db;
@@ -106,7 +238,7 @@ router.get("/me", requireAuth, async (req, res) => {
   } catch (e) {
     return res.status(500).json({
       ok: false,
-      error: e?.message || "guide me error"
+      error: "GUIDE_ME_ERROR"
     });
   }
 });
@@ -161,11 +293,31 @@ router.patch("/me", requireAuth, async (req, res) => {
       guideFields[key] = Number.isFinite(n) ? n : 0;
     }
 
-    if (Object.prototype.hasOwnProperty.call(body, "rates") && body.rates !== undefined) {
+    if (
+      Object.prototype.hasOwnProperty.call(body, "rates") &&
+      body.rates !== undefined
+    ) {
+      if (!isValidRates(body.rates)) {
+        return res.status(400).json({
+          ok: false,
+          error: "INVALID_RATES"
+        });
+      }
+
       guideFields.rates = body.rates;
     }
 
-    if (Object.prototype.hasOwnProperty.call(body, "mediaDraft") && body.mediaDraft !== undefined) {
+    if (
+      Object.prototype.hasOwnProperty.call(body, "mediaDraft") &&
+      body.mediaDraft !== undefined
+    ) {
+      if (!isValidMediaDraft(body.mediaDraft)) {
+        return res.status(400).json({
+          ok: false,
+          error: "INVALID_MEDIA_DRAFT"
+        });
+      }
+
       guideFields.mediaDraft = body.mediaDraft;
     }
 
@@ -196,8 +348,11 @@ router.patch("/me", requireAuth, async (req, res) => {
     const hasGuideFieldUpdates = Object.keys(guideFields).length > 0;
 
     if (hasGuideFieldUpdates || passwordUpdated) {
-      console.log("GUIDE_PATCH_REQUEST", body);
-      console.log("GUIDE_PATCH_FIELDS", guideFields);
+      console.log("GUIDE_PATCH", {
+        email,
+        fields: Object.keys(guideFields),
+        passwordUpdated
+      });
 
       await guidesCol.updateOne(
         { email },
@@ -341,7 +496,7 @@ router.get("/nearby", async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({
-      error: e?.message || "guides nearby error"
+      error: "GUIDES_NEARBY_ERROR"
     });
   }
 });
@@ -383,6 +538,20 @@ router.post("/", requireAuth, async (req, res) => {
 
     if (!authenticatedEmail || authenticatedEmail !== cleanEmail) {
       return res.status(403).json({ ok: false, error: "FORBIDDEN_GUIDE_EMAIL" });
+    }
+
+    if (mediaDraft !== undefined && !isValidMediaDraft(mediaDraft)) {
+      return res.status(400).json({
+        ok: false,
+        error: "INVALID_MEDIA_DRAFT"
+      });
+    }
+
+    if (rates !== undefined && !isValidRates(rates)) {
+      return res.status(400).json({
+        ok: false,
+        error: "INVALID_RATES"
+      });
     }
 
     const db = mongoose.connection?.db;
@@ -455,7 +624,7 @@ router.post("/", requireAuth, async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({
-      error: e?.message || "create guide error"
+      error: "GUIDE_CREATE_ERROR"
     });
   }
 });
