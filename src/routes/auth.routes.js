@@ -23,7 +23,7 @@ const makeToken = (user) => {
   if (!email) throw new Error("JWT_EMAIL_MISSING");
 
   return jwt.sign(
-    { email, role },
+    { email, role, tokenVersion: Number.isSafeInteger(Number(user?.tokenVersion)) ? Number(user.tokenVersion) : 0 },
     secret,
     {
       subject: sub || email,
@@ -572,6 +572,9 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
         $set: {
           password: hashedPassword,
           updatedAt: new Date()
+        },
+        $inc: {
+          tokenVersion: 1
         }
       }
     );

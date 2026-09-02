@@ -404,7 +404,7 @@ router.patch("/me", requireAuth, async (req, res) => {
         const usersCol = db.collection("users");
         const ur = await usersCol.updateOne(
           { email },
-          { $set: { password: hashPassword(cleanPassword), updatedAt: now } }
+          { $set: { password: hashPassword(cleanPassword), updatedAt: now }, $inc: { tokenVersion: 1 } }
         );
 
         if (ur.matchedCount === 0) {
