@@ -63,6 +63,16 @@ async function isBookingParty(booking, currentUserEmail) {
   return false
 }
 
+function canReadChat(booking) {
+  const status = String(booking?.status || "").trim().toUpperCase();
+  return status === "PAID" || status === "COMPLETED";
+}
+
+function canWriteChat(booking) {
+  const status = String(booking?.status || "").trim().toUpperCase();
+  return status === "PAID";
+}
+
 router.get("/health", (req, res) => {
   return res.status(200).json({ ok: true })
 })
@@ -112,6 +122,13 @@ router.get("/messages", requireAuth, async (req, res) => {
       })
     }
 
+    if (!canReadChat(booking)) {
+      return res.status(403).json({
+        ok: false,
+        error: "CHAT_NOT_AVAILABLE"
+      })
+    }
+
     const rows = await ChatMessage.find({ bookingId })
       .sort({ createdAt: 1 })
       .limit(limit)
@@ -157,6 +174,13 @@ router.post("/messages", requireAuth, async (req, res) => {
 
     if (!(await isBookingParty(booking, currentUserEmail))) {
       return res.status(403).json({ ok: false, error: "FORBIDDEN_BOOKING" })
+    }
+
+    if (!canWriteChat(booking)) {
+      return res.status(403).json({
+        ok: false,
+        error: "CHAT_NOT_AVAILABLE"
+      })
     }
 
     const senderId = String(req.user?.id || currentUserEmail).trim()
