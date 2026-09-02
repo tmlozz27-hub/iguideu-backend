@@ -188,10 +188,9 @@ router.post("/", requireAuth, async (req, res) => {
     const date = String(b.date || b.startDate || "").trim()
     const hours = toNumber(b.hours ?? b.durationHours ?? b.duration ?? 0, 0)
     const currency = String(b.currency || "usd").trim().toLowerCase()
-    const price = toNumber(
-      b.price ?? b.total ?? b.totalAmount ?? b.amount ?? 0,
-      0
-    )
+    const adults = Math.max(0, Math.floor(toNumber(b.adults, 0)))
+    const youth = Math.max(0, Math.floor(toNumber(b.youth, 0)))
+    const children = Math.max(0, Math.floor(toNumber(b.children, 0)))
 
     if (!travelerEmail) {
       return res.status(401).json({ ok: false, error: "UNAUTHORIZED" })
@@ -205,9 +204,38 @@ router.post("/", requireAuth, async (req, res) => {
     if (!hours || hours <= 0) {
       return res.status(400).json({ ok: false, error: "hours must be > 0" })
     }
-    if (price < 0) {
-      return res.status(400).json({ ok: false, error: "price must be >= 0" })
+    if (adults + youth + children <= 0) {
+      return res.status(400).json({ ok: false, error: "travelers required" })
     }
+
+    const db = mongoose.connection?.db
+
+    if (!db) {
+      return res.status(500).json({ ok: false, error: "MONGO_NOT_CONNECTED" })
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(guideId)) {
+      return res.status(400).json({ ok: false, error: "invalid guideId" })
+    }
+
+    const guide = await db.collection("guides").findOne({
+      _id: new mongoose.Types.ObjectId(guideId)
+    })
+
+    if (!guide) {
+      return res.status(404).json({ ok: false, error: "GUIDE_NOT_FOUND" })
+    }
+
+    const priceHour = Number(guide.priceHour)
+
+    if (!Number.isFinite(priceHour) || priceHour < 0) {
+      return res.status(400).json({ ok: false, error: "GUIDE_PRICE_INVALID" })
+    }
+
+    const price = Number((
+      (adults * priceHour * hours) +
+      (youth * priceHour * 0.5 * hours)
+    ).toFixed(2))
 
     const amountCents = Math.round(price * 100)
 
