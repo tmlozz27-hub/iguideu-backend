@@ -71,7 +71,19 @@ async function ensureSecurityIndexes() {
     throw new Error("MONGO_DB_NOT_AVAILABLE");
   }
 
+  const users = db.collection("users");
   const resetTokens = db.collection("password_reset_tokens");
+
+  await users.createIndex(
+    { appleSub: 1 },
+    {
+      unique: true,
+      partialFilterExpression: {
+        appleSub: { $type: "string" }
+      },
+      name: "appleSub_unique"
+    }
+  );
 
   await resetTokens.createIndex(
     { tokenHash: 1 },

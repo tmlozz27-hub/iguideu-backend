@@ -299,7 +299,7 @@ router.put("/me", requireAuth, async (req, res) => {
 router.post("/apple", appleLimiter, async (req, res) => {
   try {
     const identityToken = req.body?.identityToken;
-    const bodyEmail = req.body?.email;
+
     const fullName = req.body?.fullName;
 
     if (!identityToken) {
@@ -309,24 +309,64 @@ router.post("/apple", appleLimiter, async (req, res) => {
     }
 
     const decoded = await verifyAppleIdentityToken(identityToken);
-    const email = String(decoded.email || bodyEmail || "")
-      .trim()
-      .toLowerCase();
+    const appleSub = String(decoded.sub || "").trim();
+    const verifiedEmail = String(decoded.email || "").trim().toLowerCase();
 
-    if (!email) {
-      return res.status(400).json({ ok: false, message: "APPLE_EMAIL_REQUIRED" });
+    if (!appleSub) {
+      return res.status(401).json({ ok: false, message: "APPLE_SUB_REQUIRED" });
     }
 
-    let user = await usersCollection().findOne({ email });
+    let user = await usersCollection().findOne({ appleSub });
+
+    if (!user && verifiedEmail) {
+      const existingByEmail = await usersCollection().findOne({
+        email: verifiedEmail
+      });
+
+      if (existingByEmail) {
+        const now = new Date();
+
+        const binding = await usersCollection().updateOne(
+          {
+            _id: existingByEmail._id,
+            appleSub: { $exists: false }
+          },
+          {
+            $set: {
+              appleSub,
+              updatedAt: now
+            }
+          }
+        );
+
+        if (binding.modifiedCount !== 1) {
+          return res.status(409).json({
+            ok: false,
+            message: "APPLE_ACCOUNT_ALREADY_BOUND"
+          });
+        }
+
+        user = {
+          ...existingByEmail,
+          appleSub,
+          updatedAt: now
+        };
+      }
+    }
 
     if (!user) {
+      if (!verifiedEmail) {
+        return res.status(400).json({ ok: false, message: "APPLE_EMAIL_REQUIRED" });
+      }
+
       const now = new Date();
       const nameFromBody = normalizeFullName(fullName);
-      const name = nameFromBody || email;
+      const name = nameFromBody || verifiedEmail;
 
       const result = await usersCollection().insertOne({
         name,
-        email,
+        email: verifiedEmail,
+        appleSub,
         password: "",
         role: "traveler",
         phone: "",
@@ -339,7 +379,8 @@ router.post("/apple", appleLimiter, async (req, res) => {
       user = {
         _id: result.insertedId,
         name,
-        email,
+        email: verifiedEmail,
+        appleSub,
         password: "",
         role: "traveler",
         phone: "",
