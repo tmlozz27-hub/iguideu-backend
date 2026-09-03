@@ -40,3 +40,4 @@ server.js.DISABLED
 
 .DS_Store
 Thumbs.db
+stripe_whsec_local.txt
