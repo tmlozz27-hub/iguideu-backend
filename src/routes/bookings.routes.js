@@ -294,6 +294,13 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
       })
     }
 
+    if (booking.status === "COMPLETED" || bookingEndPlus48hPassed(booking)) {
+      return res.status(403).json({
+        ok: false,
+        error: "BOOKING_CANCELLATION_CLOSED"
+      })
+    }
+
     const paymentIntentId = String(
       booking.stripePaymentIntentId || ""
     ).trim()
