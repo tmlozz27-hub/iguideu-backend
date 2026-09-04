@@ -53,15 +53,7 @@ router.post("/webhook", async (req, res) => {
     const paymentIntentId = obj?.id ? String(obj.id) : "";
     const bookingId = obj?.metadata?.bookingId ? String(obj.metadata.bookingId) : "";
 
-    console.log(
-      new Date().toISOString(),
-      "WEBHOOK",
-      type,
-      "pi=",
-      paymentIntentId,
-      "bookingId=",
-      bookingId
-    );
+    console.log(new Date().toISOString(), "WEBHOOK", type);
 
     if (type === "payment_intent.succeeded") {
       const Booking = await loadBookingModel();
@@ -84,11 +76,7 @@ router.post("/webhook", async (req, res) => {
       }
 
       if (!booking) {
-        console.log(
-          "NO BOOKING FOUND FOR EVENT",
-          paymentIntentId,
-          bookingId
-        );
+        console.log("NO BOOKING FOUND FOR EVENT");
       } else {
         const expectedPaymentIntentId = String(booking.stripePaymentIntentId || "").trim();
         const expectedAmountCents = Number(booking.amountCents || 0);
@@ -97,17 +85,17 @@ router.post("/webhook", async (req, res) => {
         const receivedCurrency = String(obj?.currency || "").trim().toLowerCase();
 
         if (!expectedPaymentIntentId || expectedPaymentIntentId !== paymentIntentId) {
-          console.log("WEBHOOK_PAYMENT_INTENT_MISMATCH", String(booking._id), paymentIntentId);
+          console.log("WEBHOOK_PAYMENT_INTENT_MISMATCH");
           return res.status(400).json({ received: false, error: "PAYMENT_INTENT_MISMATCH" });
         }
 
         if (!Number.isFinite(expectedAmountCents) || expectedAmountCents <= 0 || receivedAmountCents !== expectedAmountCents) {
-          console.log("WEBHOOK_AMOUNT_MISMATCH", String(booking._id), receivedAmountCents);
+          console.log("WEBHOOK_AMOUNT_MISMATCH");
           return res.status(400).json({ received: false, error: "AMOUNT_MISMATCH" });
         }
 
         if (!receivedCurrency || receivedCurrency !== expectedCurrency) {
-          console.log("WEBHOOK_CURRENCY_MISMATCH", String(booking._id), receivedCurrency);
+          console.log("WEBHOOK_CURRENCY_MISMATCH");
           return res.status(400).json({ received: false, error: "CURRENCY_MISMATCH" });
         }
 
@@ -121,13 +109,7 @@ router.post("/webhook", async (req, res) => {
 
         const membershipTracking = await recordGuidePaidBooking(booking, "stripe-webhook");
 
-        console.log(
-          "BOOKING UPDATED TO PAID",
-          String(booking._id),
-          paymentIntentId,
-          "membershipTracking=",
-          JSON.stringify(membershipTracking)
-        );
+        console.log("BOOKING UPDATED TO PAID");
       }
     }
 

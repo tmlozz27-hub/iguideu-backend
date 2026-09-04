@@ -189,7 +189,7 @@ router.post("/me/connect/onboarding", requireAuth, async (req, res) => {
       onboardingUrl: accountLink.url
     });
   } catch (e) {
-    console.error("stripe connect onboarding error", e);
+    console.error("stripe connect onboarding error", { message: e?.message || "", name: e?.name || "", code: e?.code || "" });
 
     return res.status(500).json({
       ok: false,
@@ -281,7 +281,7 @@ router.post("/me/connect/sync", requireAuth, async (req, res) => {
       stripeConnect
     });
   } catch (e) {
-    console.error("stripe connect sync error", e);
+    console.error("stripe connect sync error", { message: e?.message || "", name: e?.name || "", code: e?.code || "" });
 
     return res.status(500).json({
       ok: false,
@@ -418,7 +418,7 @@ router.patch("/me", requireAuth, async (req, res) => {
     const hasGuideFieldUpdates = Object.keys(guideFields).length > 0;
 
     if (hasGuideFieldUpdates || passwordUpdated) {
-      console.log("GUIDE_PATCH", { email, fields: Object.keys(guideFields), passwordUpdated });
+      console.log("GUIDE_PATCH", { fields: Object.keys(guideFields), passwordUpdated });
 
       await guidesCol.updateOne(
         { email },
