@@ -567,6 +567,8 @@ router.get("/nearby", async (req, res) => {
 
         return {
           ...toPublicGuide(doc),
+          lat: point.lat,
+          lng: point.lng,
           distanceKm: Number(distanceKm.toFixed(2)),
           geo: {
             lat: point.lat,
