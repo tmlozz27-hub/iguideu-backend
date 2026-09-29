@@ -12,6 +12,7 @@ export function buildAirwallexTransferPayloadArs(booking, guide) {
     source_currency: "USD",
     source_amount: amount.amount,
     transfer_currency: "ARS",
+    transfer_method: "LOCAL",
     fee_paid_by: "PAYER",
     reason: "travel",
     reference: `IGUIDEU-${payout.bookingId}`

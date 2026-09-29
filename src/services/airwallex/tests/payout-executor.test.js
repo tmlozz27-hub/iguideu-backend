@@ -68,6 +68,7 @@ try {
       assert.equal(payload.source_amount, "9.00");
       assert.equal(payload.source_currency, "USD");
       assert.equal(payload.transfer_currency, "ARS");
+        assert.equal(payload.transfer_method, "LOCAL");
       assert.equal(payload.fee_paid_by, "PAYER");
       assert.equal(payload.reason, "travel");
       assert.equal(Object.hasOwn(payload, "transfer_amount"), false);
