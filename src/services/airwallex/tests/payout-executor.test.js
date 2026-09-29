@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { executeAirwallexSandboxPayout } from "../payout-executor.js";
 
 process.env.AIRWALLEX_ENV = "sandbox";
@@ -38,6 +38,8 @@ const MockBooking = {
     if (update.$set.airwallexRequestId) {
       assert.equal(filter.amountCents, 1000);
       assert.equal(filter.guidePayoutAmountCents, 900);
+      assert.equal(update.$set.airwallexBeneficiaryId, "BENEFICIARY_FAKE_001");
+      assert.equal(createCalls, 0);
       return { ...booking, ...update.$set };
     }
 
@@ -63,8 +65,12 @@ try {
 
       const payload = JSON.parse(options.body);
 
-      assert.equal(payload.transfer_amount, "9.00");
-      assert.equal(payload.transfer_currency, "USD");
+      assert.equal(payload.source_amount, "9.00");
+      assert.equal(payload.source_currency, "USD");
+      assert.equal(payload.transfer_currency, "ARS");
+      assert.equal(payload.fee_paid_by, "PAYER");
+      assert.equal(payload.reason, "travel");
+      assert.equal(Object.hasOwn(payload, "transfer_amount"), false);
       assert.equal(payload.beneficiary_id, "BENEFICIARY_FAKE_001");
       assert.ok(payload.request_id);
 

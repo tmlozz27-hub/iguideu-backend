@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { validateAirwallexPayout } from "./payout-rules.js";
 import { validateNoDuplicateAirwallexPayout } from "./duplicate-guard.js";
 
-export async function claimAirwallexPayout(Booking, booking) {
+export async function claimAirwallexPayout(Booking, booking, beneficiaryId) {
+  if (
+    typeof beneficiaryId !== "string" ||
+    !/^[A-Za-z0-9_-]{3,128}$/.test(beneficiaryId)
+  ) {
+    throw new Error("AIRWALLEX_BENEFICIARY_ID_REQUIRED");
+  }
   const payout = validateAirwallexPayout(booking);
   validateNoDuplicateAirwallexPayout(booking);
 
@@ -27,6 +33,7 @@ export async function claimAirwallexPayout(Booking, booking) {
       $set: {
         airwallexPayoutStatus: "PROCESSING",
         airwallexRequestId: requestId,
+          airwallexBeneficiaryId: beneficiaryId,
         airwallexProcessingAt: now,
         airwallexPayoutError: ""
       }
