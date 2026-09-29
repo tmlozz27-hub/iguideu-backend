@@ -1,10 +1,17 @@
-﻿export async function recordAirwallexTransfer(Booking, booking, transfer) {
+export async function recordAirwallexTransfer(Booking, booking, transfer, beneficiaryId) {
   if (!booking?._id || !booking.airwallexRequestId) {
     throw new Error("AIRWALLEX_CLAIM_REQUIRED");
   }
 
   if (!transfer?.id || typeof transfer.id !== "string") {
     throw new Error("AIRWALLEX_TRANSFER_ID_REQUIRED");
+  }
+
+  if (
+    typeof beneficiaryId !== "string" ||
+    !/^[A-Za-z0-9_-]{3,128}$/.test(beneficiaryId)
+  ) {
+    throw new Error("AIRWALLEX_BENEFICIARY_ID_REQUIRED");
   }
 
   const updated = await Booking.findOneAndUpdate(
@@ -16,7 +23,8 @@
     },
     {
       $set: {
-        airwallexTransferId: transfer.id
+        airwallexTransferId: transfer.id,
+        airwallexBeneficiaryId: beneficiaryId
       }
     },
     { new: true }

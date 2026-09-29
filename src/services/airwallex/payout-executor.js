@@ -1,17 +1,24 @@
 ﻿import { claimAirwallexPayout } from "./payout-claim.js";
 import { createAirwallexTransfer } from "./client.js";
 import { recordAirwallexTransfer } from "./transfer-record.js";
+import { buildAirwallexTransferPayload } from "./transfer-payload.js";
 
 export async function executeAirwallexSandboxPayout(
   Booking,
   booking,
-  payload
+  guide
 ) {
   if (process.env.AIRWALLEX_ENV !== "sandbox") {
     throw new Error("AIRWALLEX_SANDBOX_ONLY");
   }
 
+  // Validate the booking, amount and guide ownership before claiming.
+  buildAirwallexTransferPayload(booking, guide);
+
   const claimed = await claimAirwallexPayout(Booking, booking);
+
+  // Build again using the atomically claimed booking.
+  const payload = buildAirwallexTransferPayload(claimed, guide);
 
   let transfer;
 
@@ -21,8 +28,7 @@ export async function executeAirwallexSandboxPayout(
       claimed.airwallexRequestId
     );
   } catch (error) {
-    // The request may have reached Airwallex.
-    // Never automatically issue another transfer.
+    // The request may have reached Airwallex. Never retry automatically.
     throw new Error(
       "AIRWALLEX_CREATE_OUTCOME_UNCERTAIN_MANUAL_RECONCILIATION",
       { cause: error }
@@ -33,11 +39,11 @@ export async function executeAirwallexSandboxPayout(
     return await recordAirwallexTransfer(
       Booking,
       claimed,
-      transfer
+      transfer,
+      payload.beneficiary_id
     );
   } catch (error) {
-    // Airwallex may already have created the transfer.
-    // Preserve the claim for reconciliation; never retry creation.
+    // Preserve the claim for manual reconciliation.
     throw new Error(
       "AIRWALLEX_TRANSFER_RECORD_REQUIRES_RECONCILIATION",
       { cause: error }
