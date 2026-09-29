@@ -30,6 +30,11 @@ const GuideSchema = new mongoose.Schema(
     priceDay: { type: Number, default: 0 },
     priceFullDay24h: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
+    airwallex: {
+      beneficiaryId: { type: String, default: "" },
+      beneficiaryVerified: { type: Boolean, default: false },
+      beneficiaryVerifiedAt: { type: Date, default: null }
+    },
     stripeConnect: {
       accountId: { type: String, default: "", index: true },
       onboardingComplete: { type: Boolean, default: false },

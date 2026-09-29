@@ -1,4 +1,4 @@
-﻿export function validateAirwallexPayout(booking) {
+export function validateAirwallexPayout(booking) {
   if (!booking) throw new Error("BOOKING_REQUIRED");
 
   if (booking.status !== "COMPLETED") {
@@ -29,6 +29,17 @@
     throw new Error("INVALID_GUIDE_PAYOUT_AMOUNT");
   }
 
+  const paidAmountCents = Number(booking.amountCents);
+
+  if (!Number.isSafeInteger(paidAmountCents) || paidAmountCents <= 0) {
+    throw new Error("INVALID_ORIGINAL_PAYMENT_AMOUNT");
+  }
+
+  const expectedGuideAmountCents = Math.round(paidAmountCents * 0.9);
+
+  if (amountCents !== expectedGuideAmountCents) {
+    throw new Error("GUIDE_PAYOUT_AMOUNT_MISMATCH");
+  }
   if (String(booking.currency || "").toLowerCase() !== "usd") {
     throw new Error("UNSUPPORTED_PAYOUT_CURRENCY");
   }

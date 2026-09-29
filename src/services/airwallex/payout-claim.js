@@ -15,6 +15,8 @@ export async function claimAirwallexPayout(Booking, booking) {
       status: "COMPLETED",
       guidePayoutStatus: "READY",
       guidePayoutAmountCents: payout.amountCents,
+      amountCents: Number(booking.amountCents),
+      currency: { $regex: /^usd$/i },
       guidePayoutEligibleAt: { $lte: now },
       stripePaymentIntentId: { $exists: true, $nin: ["", null] },
       stripeTransferId: { $in: ["", null] },
