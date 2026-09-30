@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import express from "express";
@@ -82,7 +82,7 @@ test("signed webhook reconciles a transfer before returning HTTP 200", async () 
     const body = JSON.stringify({
       id: "EVENT_FAKE_001",
       name: "payout.transfer.sent",
-      data: { object: { id: "TRANSFER_FAKE_001" } }
+      data: { id: "TRANSFER_FAKE_001" }
     });
 
     const timestamp = String(Date.now());
@@ -123,3 +123,4 @@ test("signed webhook reconciles a transfer before returning HTTP 200", async () 
     }
   }
 });
+
