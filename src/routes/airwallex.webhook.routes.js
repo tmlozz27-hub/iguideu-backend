@@ -51,7 +51,7 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "UNSUPPORTED_WEBHOOK_EVENT" });
   }
 
-  const transferId = event.data?.object?.id;
+  const transferId = event.data?.id;
 
   if (typeof transferId !== "string" || !transferId.trim()) {
     return res.status(400).json({ error: "WEBHOOK_TRANSFER_ID_MISSING" });
