@@ -23,7 +23,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.21.0",
     "mongoose": "^8.5.2",
-    "multer": "^2.2.0",
+    "multer": "^2.4.0",
     "qs": "6.16.0",
     "resend": "^6.12.4",
     "stripe": "^16.12.0"
