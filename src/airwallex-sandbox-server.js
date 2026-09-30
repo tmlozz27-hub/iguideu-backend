@@ -1,7 +1,9 @@
-﻿import express from "express";
+import express from "express";
 import helmet from "helmet";
 import { connectAirwallexSandboxMongo } from "./services/airwallex-sandbox-mongo.js";
 import airwallexWebhookRoutes from "./routes/airwallex.webhook.routes.js";
+import Booking from "./models/Booking.js";
+import Guide from "./models/Guide.js";
 
 if (process.env.AIRWALLEX_ENV !== "sandbox") {
   throw new Error("AIRWALLEX_SANDBOX_ONLY");
@@ -31,6 +33,64 @@ app.use(
   airwallexWebhookRoutes
 );
 
+app.post("/api/airwallex/test/prepare-integral", express.json(), async (_req, res) => {
+  try {
+    if (process.env.AIRWALLEX_ENV !== "sandbox") {
+      throw new Error("AIRWALLEX_SANDBOX_ONLY");
+    }
+
+    const beneficiaryId = String(
+      process.env.AIRWALLEX_SANDBOX_BENEFICIARY_ID || ""
+    ).trim();
+
+    if (!beneficiaryId) {
+      throw new Error("AIRWALLEX_SANDBOX_BENEFICIARY_ID_MISSING");
+    }
+
+    const guide = await Guide.create({
+      userEmail: "airwallex-integral-guide@invalid.example",
+      name: "Airwallex Integral Sandbox Guide",
+      airwallex: {
+        beneficiaryId,
+        beneficiaryVerified: true,
+        beneficiaryVerifiedAt: new Date()
+      }
+    });
+
+    const booking = await Booking.create({
+      travelerName: "Airwallex Integral Sandbox Traveler",
+      travelerEmail: "airwallex-integral-traveler@invalid.example",
+      guideId: String(guide._id),
+      guideName: guide.name,
+      currency: "usd",
+      amountCents: 1000,
+      totalCents: 1000,
+      totalAmountCents: 1000,
+      status: "COMPLETED",
+      stripePaymentIntentId: "pi_SANDBOX_INTEGRAL_FAKE",
+      guidePayoutAmountCents: 900,
+      guidePayoutStatus: "READY",
+      guidePayoutEligibleAt: new Date(),
+      paidAt: new Date(),
+      completedAt: new Date(),
+      airwallexPayoutStatus: "NOT_STARTED"
+    });
+
+    res.status(201).json({
+      ok: true,
+      bookingId: String(booking._id),
+      guideId: String(guide._id),
+      amountCents: booking.amountCents,
+      guidePayoutAmountCents: booking.guidePayoutAmountCents,
+      airwallexPayoutStatus: booking.airwallexPayoutStatus
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: String(error?.message || "UNKNOWN_ERROR")
+    });
+  }
+});
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 4021);
 
