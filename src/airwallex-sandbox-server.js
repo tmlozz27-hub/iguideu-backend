@@ -4,6 +4,7 @@ import { connectAirwallexSandboxMongo } from "./services/airwallex-sandbox-mongo
 import airwallexWebhookRoutes from "./routes/airwallex.webhook.routes.js";
 import Booking from "./models/Booking.js";
 import Guide from "./models/Guide.js";
+import { executeAirwallexSandboxPayout } from "./services/airwallex/payout-executor.js";
 
 if (process.env.AIRWALLEX_ENV !== "sandbox") {
   throw new Error("AIRWALLEX_SANDBOX_ONLY");
@@ -83,6 +84,48 @@ app.post("/api/airwallex/test/prepare-integral", express.json(), async (_req, re
       amountCents: booking.amountCents,
       guidePayoutAmountCents: booking.guidePayoutAmountCents,
       airwallexPayoutStatus: booking.airwallexPayoutStatus
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: String(error?.message || "UNKNOWN_ERROR")
+    });
+  }
+});
+app.post("/api/airwallex/test/run-integral/:bookingId", express.json(), async (req, res) => {
+  try {
+    if (process.env.AIRWALLEX_ENV !== "sandbox") {
+      throw new Error("AIRWALLEX_SANDBOX_ONLY");
+    }
+
+    const booking = await Booking.findById(req.params.bookingId);
+
+    if (!booking) {
+      return res.status(404).json({
+        ok: false,
+        error: "BOOKING_NOT_FOUND"
+      });
+    }
+
+    const guide = await Guide.findById(booking.guideId);
+
+    if (!guide) {
+      return res.status(404).json({
+        ok: false,
+        error: "GUIDE_NOT_FOUND"
+      });
+    }
+
+    const result = await executeAirwallexSandboxPayout(
+      Booking,
+      booking,
+      guide
+    );
+
+    res.status(200).json({
+      ok: true,
+      bookingId: String(booking._id),
+      result
     });
   } catch (error) {
     res.status(500).json({
