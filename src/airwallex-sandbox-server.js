@@ -134,6 +134,30 @@ app.post("/api/airwallex/test/run-integral/:bookingId", express.json(), async (r
     });
   }
 });
+app.get("/api/airwallex/test/status/:bookingId", async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.bookingId).lean();
+
+    if (!booking) {
+      return res.status(404).json({ ok: false, error: "BOOKING_NOT_FOUND" });
+    }
+
+    res.status(200).json({
+      ok: true,
+      bookingId: String(booking._id),
+      guidePayoutStatus: booking.guidePayoutStatus,
+      airwallexPayoutStatus: booking.airwallexPayoutStatus,
+      airwallexTransferId: booking.airwallexTransferId || null,
+      airwallexRequestId: booking.airwallexRequestId || null,
+      guidePayoutAmountCents: booking.guidePayoutAmountCents
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: String(error?.message || "UNKNOWN_ERROR")
+    });
+  }
+});
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 4021);
 
