@@ -72,6 +72,7 @@ import guidesRoutes from "./routes/guides.routes.js"
 import bookingsRoutes from "./routes/bookings.routes.js"
 import paymentsRoutes from "./routes/payments.routes.js"
 import stripeWebhookRoutes from "./routes/stripe.webhook.routes.js"
+import airwallexWebhookRoutes from "./routes/airwallex.webhook.routes.js"
 import chatRoutes from "./routes/chat.routes.js"
 import uploadRoutes from "./routes/upload.routes.js"
 
@@ -81,17 +82,18 @@ app.use(helmet())
 app.use(cors({ origin: "*", credentials: false }))
 
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }))
+app.use("/api/airwallex/webhook", express.raw({ type: "application/json" }))
 
 const jsonParser = express.json({ limit: "2mb" })
 const urlParser = express.urlencoded({ extended: true, limit: "2mb" })
 
 app.use((req, res, next) => {
-  if ((req.originalUrl || "").startsWith("/api/stripe/webhook")) return next()
+  if (/^\/api\/(stripe\/webhook|airwallex\/webhook)(?:\/|\?|$)/.test(req.originalUrl || "")) return next()
   jsonParser(req, res, next)
 })
 
 app.use((req, res, next) => {
-  if ((req.originalUrl || "").startsWith("/api/stripe/webhook")) return next()
+  if (/^\/api\/(stripe\/webhook|airwallex\/webhook)(?:\/|\?|$)/.test(req.originalUrl || "")) return next()
   urlParser(req, res, next)
 })
 
@@ -115,6 +117,7 @@ app.use("/api/bookings", bookingsRoutes)
 app.use("/api/reservations", bookingsRoutes)
 app.use("/api/payments", paymentsRoutes)
 app.use("/api/stripe", stripeWebhookRoutes)
+app.use("/api/airwallex/webhook", airwallexWebhookRoutes)
 app.use("/api/chat", chatRoutes)
 app.use("/api/upload", uploadRoutes)
 

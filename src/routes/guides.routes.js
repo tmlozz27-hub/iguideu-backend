@@ -3,6 +3,10 @@ import mongoose from "mongoose";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { requireAuth } from "../middleware/auth.js";
+import {
+  validateAirwallexLiveBeneficiary,
+  createAirwallexLiveBeneficiary
+} from "../services/airwallex/beneficiary-live.js";
 
 const router = express.Router();
 
@@ -286,6 +290,116 @@ router.post("/me/connect/sync", requireAuth, async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: e?.message || "STRIPE_CONNECT_SYNC_ERROR"
+    });
+  }
+});
+router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => {
+  try {
+    if (process.env.AIRWALLEX_ENV !== "live") {
+      return res.status(503).json({ ok: false, error: "AIRWALLEX_LIVE_ONLY" });
+    }
+
+    const db = mongoose.connection?.db;
+
+    if (!db) {
+      return res.status(500).json({ ok: false, error: "Mongo not connected" });
+    }
+
+    const email = authEmail(req);
+
+    if (!email) {
+      return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+    }
+
+    const guidesCol = db.collection("guides");
+    const guide = await guidesCol.findOne({ email });
+
+    if (!guide) {
+      return res.status(404).json({ ok: false, error: "GUIDE_NOT_FOUND" });
+    }
+
+    if (
+      guide.airwallex?.beneficiaryVerified === true ||
+      String(guide.airwallex?.beneficiaryId || "").trim()
+    ) {
+      return res.status(409).json({
+        ok: false,
+        error: "AIRWALLEX_BENEFICIARY_ALREADY_EXISTS"
+      });
+    }
+
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const schemaInput = body.schemaInput;
+    const beneficiary = body.beneficiary;
+
+    if (
+      !schemaInput ||
+      typeof schemaInput !== "object" ||
+      !beneficiary ||
+      typeof beneficiary !== "object"
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: "AIRWALLEX_BENEFICIARY_DATA_REQUIRED"
+      });
+    }
+
+    await validateAirwallexLiveBeneficiary({
+      schemaInput,
+      beneficiary
+    });
+
+    const created = await createAirwallexLiveBeneficiary({
+      schemaInput,
+      beneficiary
+    });
+
+    const now = new Date();
+
+    await guidesCol.updateOne(
+      { email },
+      {
+        $set: {
+          "airwallex.beneficiaryId": created.id,
+          "airwallex.beneficiaryVerified": true,
+          "airwallex.beneficiaryVerifiedAt": now,
+          "airwallex.bankCountryCode": String(
+            schemaInput.bankCountryCode || ""
+          ).trim().toUpperCase(),
+          "airwallex.accountCurrency": String(
+            schemaInput.accountCurrency || ""
+          ).trim().toUpperCase(),
+          "airwallex.transferMethod": String(
+            schemaInput.transferMethod || ""
+          ).trim().toUpperCase(),
+          updatedAt: now
+        }
+      }
+    );
+
+    return res.status(200).json({
+      ok: true,
+      airwallex: {
+        beneficiaryId: created.id,
+        beneficiaryVerified: true,
+        beneficiaryVerifiedAt: now,
+        bankCountryCode: String(
+          schemaInput.bankCountryCode || ""
+        ).trim().toUpperCase(),
+        accountCurrency: String(
+          schemaInput.accountCurrency || ""
+        ).trim().toUpperCase(),
+        transferMethod: String(
+          schemaInput.transferMethod || ""
+        ).trim().toUpperCase()
+      }
+    });
+  } catch (error) {
+    console.error("AIRWALLEX_GUIDE_ONBOARDING_ERROR", error.message);
+
+    return res.status(400).json({
+      ok: false,
+      error: "AIRWALLEX_GUIDE_ONBOARDING_FAILED"
     });
   }
 });

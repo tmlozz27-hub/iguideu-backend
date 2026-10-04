@@ -47,6 +47,26 @@ const BookingSchema = new mongoose.Schema(
     guidePayoutTransferredAt: { type: Date, default: null },
     guidePayoutError: { type: String, default: "" },
 
+  // Airwallex: independent from Stripe Connect.
+  airwallexTransferId: { type: String, default: "", index: true },
+  airwallexRequestId: { type: String, default: "" },
+  airwallexBatchId: { type: String, default: "", index: true },
+  airwallexBeneficiaryId: { type: String, default: "" },
+  airwallexPayoutStatus: {
+    type: String,
+    default: "NOT_STARTED",
+    enum: [
+      "NOT_STARTED",
+      "PROCESSING",
+      "SENT",
+      "COMPLETED",
+      "FAILED",
+      "RECONCILIATION_REQUIRED"
+    ]
+  },
+  airwallexProcessingAt: { type: Date, default: null },
+  airwallexCompletedAt: { type: Date, default: null },
+  airwallexPayoutError: { type: String, default: "" },
     paidAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
     cancelledAt: { type: Date, default: null },
