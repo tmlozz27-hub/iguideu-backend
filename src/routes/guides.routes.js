@@ -8,6 +8,11 @@ import {
   createAirwallexLiveBeneficiary
 } from "../services/airwallex/beneficiary-live.js";
 
+import { getAirwallexLiveBeneficiarySchema } from "../services/airwallex/beneficiary-schema-live.js";
+
+import { claimGuideBeneficiaryOnboarding } from "../services/airwallex/guide-beneficiary-claim.js";
+import { recordCreatedAirwallexBeneficiary } from "../services/airwallex/guide-beneficiary-recovery.js";
+import { linkAirwallexBeneficiaryToGuide } from "../services/airwallex/guide-beneficiary-link.js";
 const router = express.Router();
 
 const STRIPE_SECRET_KEY =
@@ -293,6 +298,58 @@ router.post("/me/connect/sync", requireAuth, async (req, res) => {
     });
   }
 });
+router.post("/me/airwallex/schema", requireAuth, async (req, res) => {
+  try {
+    const email = authEmail(req);
+
+    if (!email) {
+      return res.status(401).json({
+        ok: false,
+        error: "GUIDE_AUTH_REQUIRED"
+      });
+    }
+
+    const db = mongoose.connection?.db;
+
+    if (!db) {
+      return res.status(503).json({
+        ok: false,
+        error: "DATABASE_UNAVAILABLE"
+      });
+    }
+
+    const guide = await db.collection("guides").findOne({ email });
+
+    if (!guide) {
+      return res.status(403).json({
+        ok: false,
+        error: "GUIDE_PROFILE_REQUIRED"
+      });
+    }
+
+    const input = req.body || {};
+
+    const schema = await getAirwallexLiveBeneficiarySchema({
+      bankCountryCode: input.bankCountryCode,
+      accountCurrency: input.accountCurrency,
+      entityType: input.entityType,
+      transferMethod: input.transferMethod
+    });
+
+    return res.json({
+      ok: true,
+      schema
+    });
+  } catch (error) {
+    console.error("AIRWALLEX_SCHEMA_ERROR", error.message);
+
+    return res.status(400).json({
+      ok: false,
+      error: "AIRWALLEX_SCHEMA_UNAVAILABLE"
+    });
+  }
+});
+
 router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => {
   try {
     if (process.env.AIRWALLEX_ENV !== "live") {
@@ -344,62 +401,67 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => {
       });
     }
 
+    if (process.env.AIRWALLEX_LIVE_BENEFICIARIES_ENABLED !== "true") {
+      return res.status(503).json({
+        ok: false,
+        error: "AIRWALLEX_LIVE_BENEFICIARIES_DISABLED"
+      });
+    }
+    const externalIdentifier = `IGUIDEU-GUIDE-${String(guide._id)}`;
+
     await validateAirwallexLiveBeneficiary({
       schemaInput,
-      beneficiary
+      beneficiary,
+      externalIdentifier
     });
+
+
+
+
+
+const claimId = await claimGuideBeneficiaryOnboarding(
+      guidesCol,
+      email
+    );
 
     const created = await createAirwallexLiveBeneficiary({
       schemaInput,
-      beneficiary
+      beneficiary,
+      externalIdentifier
     });
 
-    const now = new Date();
-
-    await guidesCol.updateOne(
-      { email },
-      {
-        $set: {
-          "airwallex.beneficiaryId": created.id,
-          "airwallex.beneficiaryVerified": true,
-          "airwallex.beneficiaryVerifiedAt": now,
-          "airwallex.bankCountryCode": String(
-            schemaInput.bankCountryCode || ""
-          ).trim().toUpperCase(),
-          "airwallex.accountCurrency": String(
-            schemaInput.accountCurrency || ""
-          ).trim().toUpperCase(),
-          "airwallex.transferMethod": String(
-            schemaInput.transferMethod || ""
-          ).trim().toUpperCase(),
-          updatedAt: now
-        }
-      }
+    await recordCreatedAirwallexBeneficiary(
+      guidesCol,
+      email,
+      claimId,
+      created.id
     );
 
+    const linked = await linkAirwallexBeneficiaryToGuide(
+      guidesCol,
+      email,
+      created,
+      schemaInput,
+      claimId
+    );
     return res.status(200).json({
       ok: true,
       airwallex: {
-        beneficiaryId: created.id,
-        beneficiaryVerified: true,
-        beneficiaryVerifiedAt: now,
-        bankCountryCode: String(
-          schemaInput.bankCountryCode || ""
-        ).trim().toUpperCase(),
-        accountCurrency: String(
-          schemaInput.accountCurrency || ""
-        ).trim().toUpperCase(),
-        transferMethod: String(
-          schemaInput.transferMethod || ""
-        ).trim().toUpperCase()
+        beneficiaryId: linked.beneficiaryId,
+        beneficiaryVerified: linked.beneficiaryVerified,
+        beneficiaryVerifiedAt: linked.beneficiaryVerifiedAt,
+        bankCountryCode: schemaInput.bankCountryCode,
+        accountCurrency: schemaInput.accountCurrency,
+        transferMethod: schemaInput.transferMethod
       }
     });
   } catch (error) {
     console.error("AIRWALLEX_GUIDE_ONBOARDING_ERROR", error.message);
 
-    return res.status(400).json({
+    return res.status(409).json({
       ok: false,
-      error: "AIRWALLEX_GUIDE_ONBOARDING_FAILED"
+      error: "AIRWALLEX_GUIDE_ONBOARDING_REVIEW_REQUIRED",
+      retryAllowed: false
     });
   }
 });
