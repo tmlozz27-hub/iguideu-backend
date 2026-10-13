@@ -19,15 +19,14 @@ function authEmail(req) {
 
 function bookingEndPlus48hPassed(booking) {
   const dateStr = String(booking?.date || "").trim()
-  const hours = Number(booking?.hours || 0)
-
-  if (!dateStr) return false
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false
 
   const start = new Date(`${dateStr}T00:00:00.000Z`)
   if (Number.isNaN(start.getTime())) return false
+  if (start.toISOString().slice(0, 10) !== dateStr) return false
 
-  const endMs = start.getTime() + Math.max(hours, 0) * 60 * 60 * 1000
-  const closeMs = endMs + 48 * 60 * 60 * 1000
+  // 48 horas desde las 00:00 UTC del mismo dia de la reserva.
+  const closeMs = start.getTime() + 48 * 60 * 60 * 1000
 
   return Date.now() >= closeMs
 }

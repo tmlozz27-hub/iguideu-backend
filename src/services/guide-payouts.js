@@ -52,6 +52,8 @@ async function findExistingTransferForBooking(stripe, booking, accountId, amount
 }
 
 export async function processGuidePayout(bookingId) {
+  // Stripe Connect payouts disabled. Guide payouts use Airwallex.
+  throw new Error("STRIPE_CONNECT_GUIDE_PAYOUTS_DISABLED");
   const db = mongoose.connection?.db;
   const stripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim();
 
