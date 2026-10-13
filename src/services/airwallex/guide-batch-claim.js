@@ -6,7 +6,8 @@ export async function claimAirwallexGuideBatch(
   Booking,
   bookings,
   guideId,
-  beneficiaryId
+  beneficiaryId,
+  session = null
 ) {
   const batch = buildGuidePayoutBatch(bookings, guideId);
 
@@ -46,14 +47,18 @@ export async function claimAirwallexGuideBatch(
         airwallexBatchId: batchId,
         airwallexRequestId: requestId,
         airwallexBeneficiaryId: beneficiaryId,
-        airwallexPayoutStatus: "PROCESSING",
-        airwallexProcessingAt: now,
+          airwallexPayoutStatus: "PROCESSING",
+          airwallexProcessingAt: now,
+
         airwallexPayoutError: ""
       }
     }
-  );
+  , { session });
 
   if (result.modifiedCount !== bookingIds.length) {
+    if (session) {
+      throw new Error("AIRWALLEX_BATCH_CLAIM_REJECTED_TRANSACTION_ABORT");
+    }
     await Booking.updateMany(
       {
         _id: { $in: bookingIds },

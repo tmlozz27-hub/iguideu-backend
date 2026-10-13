@@ -1,4 +1,7 @@
 import { claimAirwallexGuideBatch } from "./guide-batch-claim.js";
+import { validateAirwallexGuideForPayout } from "./guide-payout-validation.js";
+import AirwallexPayoutBatch from "../../models/AirwallexPayoutBatch.js";
+import { createAirwallexBatchManifest } from "./batch-manifest-store.js";
 import { buildAirwallexGuideBatchPayloadGlobal } from "./guide-batch-payload-global.js";
 import { createAirwallexLiveTransfer } from "./client-live.js";
 import { recordAirwallexBatchTransfer } from "./batch-transfer-record.js";
@@ -11,6 +14,7 @@ export async function executeAirwallexLiveGuideBatch(
   guide
 ) {
   assertAirwallexLivePayoutsEnabled();
+  validateAirwallexGuideForPayout(guide, guide?._id);
 
   if (!guide?._id) {
     throw new Error("AIRWALLEX_GUIDE_REQUIRED");
@@ -38,12 +42,28 @@ export async function executeAirwallexLiveGuideBatch(
     localClearingSystem: airwallex.localClearingSystem || undefined
   });
 
-  const claimed = await claimAirwallexGuideBatch(
-    Booking,
-    bookings,
-    String(guide._id),
-    beneficiaryId
-  );
+  const session = await Booking.db.startSession();
+  let claimed;
+
+  try {
+    await session.withTransaction(async () => {
+      claimed = await claimAirwallexGuideBatch(
+        Booking,
+        bookings,
+        String(guide._id),
+        beneficiaryId,
+        session
+      );
+
+      await createAirwallexBatchManifest(
+        AirwallexPayoutBatch,
+        claimed,
+        session
+      );
+    });
+  } finally {
+    await session.endSession();
+  }
 
   const payload = buildAirwallexGuideBatchPayloadGlobal(
     claimed,
@@ -67,12 +87,26 @@ export async function executeAirwallexLiveGuideBatch(
   }
 
   try {
-    return await recordAirwallexBatchTransfer(
-      Booking,
-      claimed,
-      transfer,
-      beneficiaryId
-    );
+    const recordSession = await Booking.db.startSession();
+
+    try {
+      let result;
+
+      await recordSession.withTransaction(async () => {
+        result = await recordAirwallexBatchTransfer(
+          Booking,
+          claimed,
+          transfer,
+          beneficiaryId,
+          AirwallexPayoutBatch,
+          recordSession
+        );
+      });
+
+      return result;
+    } finally {
+      await recordSession.endSession();
+    }
   } catch (error) {
     throw new Error(
       "AIRWALLEX_LIVE_BATCH_TRANSFER_RECORD_REQUIRES_RECONCILIATION",
