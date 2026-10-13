@@ -69,6 +69,7 @@ import { connectMongo } from "./services/mongo.js"
 
 import authRoutes from "./routes/auth.routes.js"
 import guidesRoutes from "./routes/guides.routes.js"
+import guideBankStatusRoutes from "./routes/guide-bank-status.routes.js"
 import bookingsRoutes from "./routes/bookings.routes.js"
 import paymentsRoutes from "./routes/payments.routes.js"
 import stripeWebhookRoutes from "./routes/stripe.webhook.routes.js"
@@ -112,6 +113,7 @@ app.use((req, res, next) => {
 app.get("/api/health", (_req, res) => res.status(200).json({ status: "OK" }))
 
 app.use("/api/auth", authRoutes)
+app.use("/api/guides", guideBankStatusRoutes)
 app.use("/api/guides", guidesRoutes)
 app.use("/api/bookings", bookingsRoutes)
 app.use("/api/reservations", bookingsRoutes)
