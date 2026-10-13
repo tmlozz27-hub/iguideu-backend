@@ -74,6 +74,7 @@ import bookingsRoutes from "./routes/bookings.routes.js"
 import paymentsRoutes from "./routes/payments.routes.js"
 import stripeWebhookRoutes from "./routes/stripe.webhook.routes.js"
 import airwallexWebhookRoutes from "./routes/airwallex.webhook.routes.js"
+import airwallexAdminRoutes from "./routes/airwallex-admin.routes.js"
 import chatRoutes from "./routes/chat.routes.js"
 import uploadRoutes from "./routes/upload.routes.js"
 
@@ -120,6 +121,7 @@ app.use("/api/reservations", bookingsRoutes)
 app.use("/api/payments", paymentsRoutes)
 app.use("/api/stripe", stripeWebhookRoutes)
 app.use("/api/airwallex/webhook", airwallexWebhookRoutes)
+app.use("/api/airwallex/admin", airwallexAdminRoutes)
 app.use("/api/chat", chatRoutes)
 app.use("/api/upload", uploadRoutes)
 
