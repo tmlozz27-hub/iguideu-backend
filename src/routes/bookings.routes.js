@@ -19,14 +19,15 @@ function authEmail(req) {
 
 function bookingEndPlus48hPassed(booking) {
   const dateStr = String(booking?.date || "").trim()
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false
+  const hours = Number(booking?.hours || 0)
+
+  if (!dateStr) return false
 
   const start = new Date(`${dateStr}T00:00:00.000Z`)
   if (Number.isNaN(start.getTime())) return false
-  if (start.toISOString().slice(0, 10) !== dateStr) return false
 
-  // 48 horas desde las 00:00 UTC del mismo dia de la reserva.
-  const closeMs = start.getTime() + 48 * 60 * 60 * 1000
+  const endMs = start.getTime() + Math.max(hours, 0) * 60 * 60 * 1000
+  const closeMs = endMs + 48 * 60 * 60 * 1000
 
   return Date.now() >= closeMs
 }
@@ -282,31 +283,8 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
       booking.travelerEmail || ""
     ).trim().toLowerCase()
 
-    const db = mongoose.connection?.db
-    const guide = db && email
-      ? await db.collection("guides").findOne({ email })
-      : null
-
-    const guideIds = guide
-      ? [String(guide._id), String(guide.guideId || "").trim()].filter(Boolean)
-      : []
-
-    const isTraveler = bookingTravelerEmail === email
-    const isGuide = guideIds.includes(String(booking.guideId || "").trim())
-
-    if (!isTraveler && !isGuide) {
+    if (bookingTravelerEmail !== email) {
       return res.status(403).json({ ok: false, error: "FORBIDDEN_BOOKING" })
-    }
-
-    if (
-      booking.stripeTransferId ||
-      booking.airwallexTransferId ||
-      booking.airwallexBatchId ||
-      booking.airwallexRequestId ||
-      ["PROCESSING", "TRANSFERRED"].includes(booking.guidePayoutStatus) ||
-      ["PROCESSING", "SENT", "COMPLETED", "RECONCILIATION_REQUIRED"].includes(booking.airwallexPayoutStatus)
-    ) {
-      return res.status(409).json({ ok: false, error: "BOOKING_PAYOUT_ALREADY_STARTED" })
     }
 
     if (booking.status === "CANCELLED") {
