@@ -282,8 +282,31 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
       booking.travelerEmail || ""
     ).trim().toLowerCase()
 
-    if (bookingTravelerEmail !== email) {
+    const db = mongoose.connection?.db
+    const guide = db && email
+      ? await db.collection("guides").findOne({ email })
+      : null
+
+    const guideIds = guide
+      ? [String(guide._id), String(guide.guideId || "").trim()].filter(Boolean)
+      : []
+
+    const isTraveler = bookingTravelerEmail === email
+    const isGuide = guideIds.includes(String(booking.guideId || "").trim())
+
+    if (!isTraveler && !isGuide) {
       return res.status(403).json({ ok: false, error: "FORBIDDEN_BOOKING" })
+    }
+
+    if (
+      booking.stripeTransferId ||
+      booking.airwallexTransferId ||
+      booking.airwallexBatchId ||
+      booking.airwallexRequestId ||
+      ["PROCESSING", "TRANSFERRED"].includes(booking.guidePayoutStatus) ||
+      ["PROCESSING", "SENT", "COMPLETED", "RECONCILIATION_REQUIRED"].includes(booking.airwallexPayoutStatus)
+    ) {
+      return res.status(409).json({ ok: false, error: "BOOKING_PAYOUT_ALREADY_STARTED" })
     }
 
     if (booking.status === "CANCELLED") {
