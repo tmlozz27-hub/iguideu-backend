@@ -1,0 +1,146 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>I GUIDE U | Registro bancario</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      font-family: Arial, sans-serif;
+      background: #f3f6fa; color: #172338;
+    }
+    main {
+      max-width: 440px; margin: 45px auto;
+      padding: 30px; background: white;
+      border-radius: 16px;
+      box-shadow: 0 6px 28px #00000012;
+    }
+    h1 { text-align: center; color: #163a68; }
+    p { line-height: 1.5; }
+    label { display: block; margin-top: 18px; font-weight: bold; }
+    input {
+      display: block; width: 100%;
+      padding: 13px; margin-top: 7px;
+      border: 1px solid #bdc8d5;
+      border-radius: 8px; font-size: 16px;
+    }
+    button {
+      width: 100%; padding: 14px; margin-top: 24px;
+      background: #1766b1; color: white;
+      border: 0; border-radius: 8px;
+      font-size: 16px; cursor: pointer;
+    }
+    button:disabled { opacity: .6; cursor: wait; }
+    #message { margin-top: 18px; }
+    .notice { font-size: 13px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>I GUIDE U</h1>
+    <h2>Registro bancario para guías</h2>
+    <p>Ingresá con tu cuenta de I GUIDE U para continuar con la configuración de tus pagos.</p>
+
+    <form id="loginForm">
+      <label for="email">Correo electrónico</label>
+      <input id="email" type="email" autocomplete="username" required>
+
+      <label for="password">Contraseña</label>
+      <input id="password" type="password"
+             autocomplete="current-password" required>
+
+      <button id="loginButton" type="submit">Ingresar</button>
+    </form>
+
+    <p id="message" role="status" aria-live="polite"></p>
+    <p class="notice">
+      Esta página está en preparación. Todavía no registra
+      cuentas bancarias ni envía información a Airwallex.
+    </p>
+  <section id="bankDetails">
+  <h2>Datos bancarios del guía</h2>
+  <p>Completá los datos de la cuenta donde querés recibir tus pagos.</p>
+
+  <form id="bankForm" onsubmit="return false">
+    <label for="account_name">Nombre completo del titular</label>
+    <input id="account_name" autocomplete="name" required>
+
+    <label for="bank_country_code">País del banco</label>
+    <select id="bank_country_code" required>
+      <option value="">Seleccionar país</option>
+      <option value="AR">Argentina</option>
+    </select>
+
+    <label for="account_currency">Moneda de recepción</label>
+    <select id="account_currency" required>
+      <option value="ARS">ARS — Peso argentino</option>
+    </select>
+
+    <label for="account_number">CBU (22 dígitos)</label>
+    <input id="account_number" inputmode="numeric"
+           pattern="[0-9]{22}" maxlength="22" required>
+
+    <label for="personal_id_number">Identificación personal</label>
+    <input id="personal_id_number" required>
+
+    <label for="street_address">Dirección</label>
+    <input id="street_address" required>
+
+    <label for="city">Ciudad</label>
+    <input id="city" required>
+
+    <label for="postcode">Código postal</label>
+    <input id="postcode" required>
+
+    <button type="button" disabled>
+      Guardar datos bancarios (próximamente)
+    </button>
+  </form>
+</section>
+
+</main>
+
+  <script>
+    const form = document.getElementById("loginForm");
+    const button = document.getElementById("loginButton");
+    const message = document.getElementById("message");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      message.textContent = "Verificando acceso...";
+
+      try {
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: document.getElementById("email").value.trim(),
+            password: document.getElementById("password").value
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok || !data.token) {
+          message.textContent = "No se pudo iniciar sesión. Revisá tus datos.";
+          return;
+        }
+
+        message.textContent =
+          "Acceso confirmado. El registro bancario estará disponible próximamente.";
+
+        form.reset();
+      } catch {
+        message.textContent = "No se pudo conectar con I GUIDE U.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
+
+

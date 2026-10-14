@@ -1,0 +1,40 @@
+﻿<section id="bankDetails" hidden>
+  <h2>Datos bancarios del guía</h2>
+  <p>Completá los datos de la cuenta donde querés recibir tus pagos.</p>
+
+  <form id="bankForm">
+    <label for="account_name">Nombre completo del titular</label>
+    <input id="account_name" autocomplete="name" required>
+
+    <label for="bank_country_code">País del banco</label>
+    <select id="bank_country_code" required>
+      <option value="">Seleccionar país</option>
+      <option value="AR">Argentina</option>
+    </select>
+
+    <label for="account_currency">Moneda de recepción</label>
+    <select id="account_currency" required>
+      <option value="ARS">ARS — Peso argentino</option>
+    </select>
+
+    <label for="account_number">CBU (22 dígitos)</label>
+    <input id="account_number" inputmode="numeric"
+           pattern="[0-9]{22}" maxlength="22" required>
+
+    <label for="personal_id_number">Identificación personal</label>
+    <input id="personal_id_number" required>
+
+    <label for="street_address">Dirección</label>
+    <input id="street_address" required>
+
+    <label for="city">Ciudad</label>
+    <input id="city" required>
+
+    <label for="postcode">Código postal</label>
+    <input id="postcode" required>
+
+    <button type="button" disabled>
+      Guardar datos bancarios (próximamente)
+    </button>
+  </form>
+</section>
