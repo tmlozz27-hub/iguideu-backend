@@ -99,15 +99,31 @@ router.post("/webhook", async (req, res) => {
           return res.status(400).json({ received: false, error: "CURRENCY_MISMATCH" });
         }
 
-        booking.status = "PAID";
-        booking.stripePaymentIntentId = paymentIntentId || booking.stripePaymentIntentId;
-        booking.paidAt = new Date();
-        booking.guidePayoutAmountCents = Math.round(expectedAmountCents * 0.9);
-        booking.guidePayoutStatus = "NOT_READY";
+        const updatedBooking = await Booking.findOneAndUpdate(
+          {
+            _id: booking._id,
+            stripePaymentIntentId: paymentIntentId,
+            status: { $in: ["PENDING", "CONFIRMED"] },
+            cancellationLock: { $in: ["", null] },
+            cancellationRefundStatus: { $in: ["NOT_STARTED", null] }
+          },
+          {
+            $set: {
+              status: "PAID",
+              paidAt: booking.paidAt || new Date(),
+              guidePayoutAmountCents: Math.round(expectedAmountCents * 0.9),
+              guidePayoutStatus: "NOT_READY"
+            }
+          },
+          { new: true }
+        );
 
-        await booking.save({ validateBeforeSave: false });
+        if (!updatedBooking) {
+          console.log("WEBHOOK_PAID_UPDATE_BLOCKED_OR_ALREADY_FINAL");
+          return res.status(200).json({ received: true, type });
+        }
 
-        const membershipTracking = await recordGuidePaidBooking(booking, "stripe-webhook");
+        const membershipTracking = await recordGuidePaidBooking(updatedBooking, "stripe-webhook");
 
         console.log("BOOKING UPDATED TO PAID");
       }

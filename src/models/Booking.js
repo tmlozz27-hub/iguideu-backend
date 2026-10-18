@@ -34,6 +34,8 @@ const BookingSchema = new mongoose.Schema(
     },
 
     stripePaymentIntentId: { type: String, default: "", index: true },
+  paymentIntentCreationLock: { type: String, default: "" },
+  paymentIntentCreationLockExpiresAt: { type: Date, default: null },
     stripeTransferId: { type: String, default: "", index: true },
     guidePayoutAmountCents: { type: Number, default: 0 },
     guidePayoutAttempt: { type: Number, default: 0 },
@@ -69,6 +71,14 @@ const BookingSchema = new mongoose.Schema(
   airwallexPayoutError: { type: String, default: "" },
     paidAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
+    cancellationLock: { type: String, default: "" },
+    cancellationLockAt: { type: Date, default: null },
+    cancellationStripeRefundId: { type: String, default: "" },
+    cancellationRefundStatus: {
+      type: String,
+      enum: ["NOT_STARTED", "PENDING", "SUCCEEDED", "RECONCILIATION_REQUIRED"],
+      default: "NOT_STARTED"
+    },
     cancelledAt: { type: Date, default: null },
   },
   { timestamps: true }

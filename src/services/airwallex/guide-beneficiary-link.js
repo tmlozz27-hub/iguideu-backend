@@ -3,7 +3,8 @@ export async function linkAirwallexBeneficiaryToGuide(
   email,
   created,
   schemaInput,
-  claimId
+  claimId,
+  session = undefined
 ) {
   if (!claimId || typeof claimId !== "string") {
     throw new Error("AIRWALLEX_CLAIM_ID_REQUIRED");
@@ -27,6 +28,12 @@ export async function linkAirwallexBeneficiaryToGuide(
     {
       email,
       "airwallex.onboardingClaimId": claimId,
+        $and: [
+          { $or: [
+            { "airwallex.onboardingCreatedBeneficiaryId": { $exists: false } },
+            { "airwallex.onboardingCreatedBeneficiaryId": created.id }
+          ] }
+        ],
       "airwallex.beneficiaryVerified": { $ne: true },
       $or: [
         { "airwallex.beneficiaryId": { $exists: false } },
@@ -46,9 +53,15 @@ export async function linkAirwallexBeneficiaryToGuide(
       },
       $unset: {
         "airwallex.onboardingClaimId": "",
-        "airwallex.onboardingClaimedAt": ""
+        "airwallex.onboardingClaimedAt": "",
+        "airwallex.onboardingCreatedBeneficiaryId": "",
+        "airwallex.onboardingCreatedAt": "",
+        "airwallex.onboardingBankCountryCode": "",
+        "airwallex.onboardingAccountCurrency": "",
+        "airwallex.onboardingTransferMethod": ""
       }
-    }
+    },
+    session ? { session } : {}
   );
 
   if (result.modifiedCount !== 1) {

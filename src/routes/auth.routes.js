@@ -1,3 +1,4 @@
+import { enqueueTravelerWelcome } from "../services/traveler-welcome-queue.js";
 import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
@@ -136,12 +137,8 @@ const authRateLimitStore = new Map();
 function authRateLimit({ windowMs = 15 * 60 * 1000, max = 5 } = {}) {
   return (req, res, next) => {
     const ip = String(
-      req.headers["x-forwarded-for"] ||
-      req.socket?.remoteAddress ||
-      "unknown"
-    )
-      .split(",")[0]
-      .trim();
+      req.socket?.remoteAddress || "unknown"
+    ).trim();
 
     const now = Date.now();
 
@@ -455,6 +452,11 @@ router.post("/register", registerLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, message: "NAME_EMAIL_PASSWORD_REQUIRED" });
     }
 
+    if (password.length < 8) {
+      return res.status(400).json({ ok: false, message: "PASSWORD_MIN_8" });
+    }
+
+
     const exists = await usersCollection().findOne({ email });
 
     if (exists) {
@@ -476,6 +478,13 @@ router.post("/register", registerLimiter, async (req, res) => {
       updatedAt: now
     });
 
+    if (role === "traveler") {
+      try {
+        await enqueueTravelerWelcome(mongoose.connection.db, result.insertedId, email);
+      } catch (error) {
+        console.error("TRAVELER_WELCOME_QUEUE_ERROR", error?.message);
+      }
+    }
     const token = makeToken({
       _id: result.insertedId,
       email,
@@ -590,43 +599,70 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, error: "TOKEN_REQUIRED" });
     }
 
-    if (!password || password.length < 6) {
-      return res.status(400).json({ ok: false, error: "PASSWORD_MIN_6" });
+    if (!password || password.length < 8) {
+      return res.status(400).json({ ok: false, error: "PASSWORD_MIN_8" });
     }
 
     const tokenHash = hashResetToken(token);
 
-    const entry = await passwordResetTokensCollection().findOneAndDelete({
-      tokenHash,
-      expiresAt: { $gt: new Date() }
-    });
-
-    if (!entry?.userId) {
-      return res.status(400).json({ ok: false, error: "TOKEN_INVALID_OR_EXPIRED" });
-    }
-
     const hashedPassword = hashPassword(password);
+    const session = await mongoose.connection.startSession();
 
-    const result = await usersCollection().updateOne(
-      { _id: new mongoose.Types.ObjectId(entry.userId) },
-      {
-        $set: {
-          password: hashedPassword,
-          updatedAt: new Date()
-        },
-        $inc: {
-          tokenVersion: 1
+    try {
+      let updated = false;
+
+      await session.withTransaction(async () => {
+        const entry = await passwordResetTokensCollection().findOne({
+          tokenHash,
+          expiresAt: { $gt: new Date() }
+        }, { session });
+
+        if (!entry?.userId) {
+          return;
         }
+
+        const consumed = await passwordResetTokensCollection().deleteOne({
+          _id: entry._id,
+          tokenHash,
+          expiresAt: { $gt: new Date() }
+        }, { session });
+
+        if (consumed.deletedCount !== 1) {
+          return;
+        }
+
+        const result = await usersCollection().updateOne(
+          { _id: new mongoose.Types.ObjectId(entry.userId) },
+          {
+            $set: {
+              password: hashedPassword,
+              updatedAt: new Date()
+            },
+            $inc: {
+              tokenVersion: 1
+            }
+          },
+          { session }
+        );
+
+        if (result.matchedCount !== 1) {
+          throw new Error("RESET_PASSWORD_USER_NOT_FOUND");
+        }
+
+        updated = true;
+      });
+
+      if (!updated) {
+        return res.status(400).json({
+          ok: false,
+          error: "TOKEN_INVALID_OR_EXPIRED"
+        });
       }
-    );
 
-
-
-    if (!result.matchedCount) {
-      return res.status(400).json({ ok: false, error: "TOKEN_INVALID_OR_EXPIRED" });
+      return res.json({ ok: true, message: "Password updated." });
+    } finally {
+      await session.endSession();
     }
-
-    return res.json({ ok: true, message: "Password updated." });
   } catch (err) {
     console.error("RESET_PASSWORD_ERROR", { message: err?.message || "", name: err?.name || "", code: err?.code || "" });
     return res.status(500).json({ ok: false, error: "RESET_PASSWORD_FAILED" });

@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import Booking from "../models/Booking.js";
 import { verifyAirwallexWebhookSignature } from "../services/airwallex/webhook-signature.js";
 import { reconcileAirwallexWebhookTransfer } from "../services/airwallex/webhook-reconciliation.js";
@@ -58,19 +58,30 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    const booking = await Booking.findOne({
-      airwallexTransferId: transferId
-    });
+    const bookings = await Booking.find({
+        airwallexTransferId: transferId
+      });
 
-    if (!booking) {
-      return res.status(503).json({ error: "BOOKING_NOT_FOUND_FOR_TRANSFER" });
-    }
+      if (!bookings.length) {
+        return res.status(503).json({ error: "BOOKING_NOT_FOUND_FOR_TRANSFER" });
+      }
 
-    await reconcileAirwallexWebhookTransfer(
-      Booking,
-      booking,
-      transferId
-    );
+      const results = await Promise.allSettled(
+        bookings.map((booking) =>
+          reconcileAirwallexWebhookTransfer(Booking, booking, transferId)
+        )
+      );
+
+      const failed = results.filter((result) => result.status === "rejected");
+
+      if (failed.length) {
+        console.error("AIRWALLEX_WEBHOOK_PARTIAL_FAILURE", {
+          transferId,
+          total: bookings.length,
+          failed: failed.length
+        });
+        return res.status(503).json({ error: "WEBHOOK_RECONCILIATION_FAILED" });
+      }
 
     return res.status(200).json({ received: true });
   } catch (error) {

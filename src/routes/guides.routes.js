@@ -1,3 +1,5 @@
+import { enqueueGuideWelcome } from "../services/guide-welcome-queue.js";
+import { validateGuideProfileCreation } from "../services/guide-profile-creation-validation.js";
 import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
@@ -89,7 +91,11 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 }
 
 router.post("/me/connect/onboarding", requireAuth, async (req, res) => {
-  try {
+    return res.status(503).json({
+    ok: false,
+    error: "STRIPE_CONNECT_DISABLED_FOR_AIRWALLEX_LAUNCH"
+  });
+try {
     if (!stripe) {
       return res.status(500).json({
         ok: false,
@@ -207,7 +213,11 @@ router.post("/me/connect/onboarding", requireAuth, async (req, res) => {
   }
 });
 router.post("/me/connect/sync", requireAuth, async (req, res) => {
-  try {
+    return res.status(503).json({
+    ok: false,
+    error: "STRIPE_CONNECT_DISABLED_FOR_AIRWALLEX_LAUNCH"
+  });
+try {
     if (!stripe) {
       return res.status(500).json({
         ok: false,
@@ -421,7 +431,7 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => {
 
 const claimId = await claimGuideBeneficiaryOnboarding(
       guidesCol,
-      email
+      email, schemaInput
     );
 
     const created = await createAirwallexLiveBeneficiary({
@@ -796,7 +806,7 @@ router.post("/", requireAuth, async (req, res) => {
 
     const cleanPassword = String(password || "").trim();
 
-    if (!name || !email || !city || !country || !cleanPassword) {
+    if (!name || !email || !city || !country) {
       return res.status(400).json({
         error: "MISSING_REQUIRED_FIELDS"
       });
@@ -820,33 +830,20 @@ router.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    const usersCol = db.collection("users");
+    const validation = await validateGuideProfileCreation(
+      db,
+      authenticatedEmail,
+      cleanEmail
+    );
 
-    const existingUser = await usersCol.findOne({
-      email: cleanEmail
-    });
-
-    if (existingUser) {
-      return res.status(409).json({
+    if (!validation.ok) {
+      return res.status(validation.status).json({
         ok: false,
-        error: "EMAIL_ALREADY_EXISTS"
+        error: validation.error
       });
     }
 
     const now = new Date();
-
-    await usersCol.insertOne({
-      name: String(name).trim(),
-      email: cleanEmail,
-      password: hashPassword(cleanPassword),
-      role: "guide",
-      phone: phone ? String(phone).trim() : "",
-      city: city ? String(city).trim() : "",
-      country: country ? String(country).trim() : "",
-      bio: bio ? String(bio).trim() : "",
-      createdAt: now,
-      updatedAt: now
-    });
 
     const guidesCol = db.collection("guides");
 
@@ -873,6 +870,12 @@ lat: Number(lat),
     };
 
     const result = await guidesCol.insertOne(doc);
+
+    try {
+      await enqueueGuideWelcome(db, result.insertedId, cleanEmail);
+    } catch (queueError) {
+      console.error("GUIDE_WELCOME_QUEUE_FAILED", queueError?.message);
+    }
 
     return res.json({
       ok: true,

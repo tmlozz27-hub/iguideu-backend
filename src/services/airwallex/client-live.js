@@ -119,3 +119,59 @@ export async function createAirwallexLiveTransfer(payload, requestId) {
 
   return transfer;
 }
+
+export async function findAirwallexLiveTransferByRequestId(requestId) {
+  if (process.env.AIRWALLEX_ENV !== "live") {
+    throw new Error("AIRWALLEX_LIVE_ONLY");
+  }
+
+  if (
+    typeof requestId !== "string" ||
+    !/^[A-Za-z0-9_-]{1,128}$/.test(requestId)
+  ) {
+    throw new Error("AIRWALLEX_REQUEST_ID_INVALID");
+  }
+
+  const token = await airwallexLiveLogin();
+
+  const url = new URL(`${LIVE_URL}/api/v1/transfers`);
+  url.searchParams.set("request_id", requestId);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `AIRWALLEX_TRANSFER_LOOKUP_FAILED_${response.status}`
+    );
+  }
+
+  const data = await response.json();
+
+  if (!Array.isArray(data?.items)) {
+    throw new Error("AIRWALLEX_TRANSFER_LOOKUP_INVALID_RESPONSE");
+  }
+
+  const matches = data.items.filter(
+    (item) => item?.request_id === requestId
+  );
+
+  if (matches.length !== 1) {
+    throw new Error(
+      "AIRWALLEX_TRANSFER_LOOKUP_MANUAL_RECONCILIATION_REQUIRED"
+    );
+  }
+
+  if (
+    typeof matches[0].id !== "string" ||
+    !matches[0].id.trim()
+  ) {
+    throw new Error("AIRWALLEX_TRANSFER_LOOKUP_ID_MISSING");
+  }
+
+  return matches[0];
+}

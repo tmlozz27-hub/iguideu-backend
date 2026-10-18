@@ -1,4 +1,6 @@
-﻿import { Router } from "express";
+import { recoverAirwallexBatchAdmin } from "../services/airwallex/batch-recovery-admin.js";
+import { recoverAirwallexGuideOnboarding } from "../services/airwallex/guide-onboarding-recovery.js";
+import { Router } from "express";
 import mongoose from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePayoutAdmin } from "../middleware/payout-admin.js";
@@ -45,4 +47,57 @@ router.post(
   }
 );
 
+router.post(
+  "/recover-guide-onboarding",
+  requireAuth,
+  requirePayoutAdmin,
+  async (req, res) => {
+    try {
+      const result = await recoverAirwallexGuideOnboarding(
+        mongoose.connection.db,
+        req.body?.guideId,
+        {
+          evidenceReference: req.body?.evidenceReference,
+          reviewedBy: req.user.email
+        }
+      );
+
+      return res.status(200).json({
+        ok: true,
+        ...result
+      });
+    } catch (error) {
+      console.error("AIRWALLEX_ONBOARDING_RECOVERY_ERROR", error.message);
+
+      return res.status(409).json({
+        ok: false,
+        error: "AIRWALLEX_ONBOARDING_RECOVERY_REVIEW_REQUIRED"
+      });
+    }
+  }
+);
+router.post(
+  "/recover-batch-transfer",
+  requireAuth,
+  requirePayoutAdmin,
+  async (req, res) => {
+    try {
+      const result = await recoverAirwallexBatchAdmin({
+        batchId: req.body?.batchId,
+        transferId: req.body?.transferId,
+        evidenceReference: req.body?.evidenceReference,
+        reviewedBy: req.user.email
+      });
+
+      return res.status(200).json({ ok: true, ...result });
+    } catch (error) {
+      console.error("AIRWALLEX_BATCH_RECOVERY_ERROR", error.message);
+
+      return res.status(409).json({
+        ok: false,
+        error: "AIRWALLEX_BATCH_RECOVERY_REVIEW_REQUIRED"
+      });
+    }
+  }
+);
 export default router;

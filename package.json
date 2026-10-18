@@ -1,31 +1,33 @@
-{
-  "name": "iguideu-backend",
-  "version": "1.0.0",
-  "private": true,
-  "description": "I GUIDE U Backend (Node/Express)",
-  "type": "module",
-  "main": "src/server.js",
-  "scripts": {
-    "start": "node -r dotenv/config src/server.js",
-    "dev": "node -r dotenv/config src/server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "@sentry/node": "^10.69.0",
-    "cloudinary": "^2.10.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "express": "^5.2.1",
-    "helmet": "^8.3.0",
-    "jose": "^6.2.3",
-    "jsonwebtoken": "^9.0.2",
-    "mongodb": "^6.21.0",
-    "mongoose": "^8.5.2",
-    "multer": "^2.2.0",
-    "qs": "6.16.0",
-    "resend": "^6.12.4",
-    "stripe": "^16.12.0"
-  }
+﻿{
+    "name":  "iguideu-backend",
+    "version":  "1.0.0",
+    "private":  true,
+    "description":  "I GUIDE U Backend (Node/Express)",
+    "type":  "module",
+    "main":  "src/server.js",
+    "scripts":  {
+                    "start":  "node -r dotenv/config src/server.js",
+                    "dev":  "node -r dotenv/config src/server.js",
+                    "test":  "node --test tests/cancellation-safety/refund-record.test.mjs tests/stripe-payment-safety/duplicate-intent.test.cjs tests/stripe-payment-safety/payment.test.cjs tests/stripe-payment-safety/integration/concurrency.test.cjs tests/stripe-payment-safety/integration/real-endpoint.test.mjs"
+                },
+    "engines":  {
+                    "node":  "\u003e=18"
+                },
+    "dependencies":  {
+                         "@sentry/node":  "^10.69.0",
+                         "cloudinary":  "^2.10.0",
+                         "cors":  "^2.8.5",
+                         "dotenv":  "^16.6.1",
+                         "express":  "^5.2.1",
+                         "file-type":  "21.3.4",
+                         "helmet":  "^8.3.0",
+                         "jose":  "^6.2.3",
+                         "jsonwebtoken":  "^9.0.2",
+                         "mongodb":  "^6.21.0",
+                         "mongoose":  "^8.5.2",
+                         "multer":  "^2.2.0",
+                         "qs":  "6.16.0",
+                         "resend":  "^6.12.4",
+                         "stripe":  "^16.12.0"
+                     }
 }

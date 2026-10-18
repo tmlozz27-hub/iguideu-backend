@@ -1,4 +1,4 @@
-﻿import mongoose from "mongoose";
+import mongoose from "mongoose";
 import { connectMongo } from "./services/mongo.js";
 import Booking from "./models/Booking.js";
 import Guide from "./models/Guide.js";
@@ -21,16 +21,29 @@ async function main() {
     new Date()
   );
 
+  const successful = results.filter((item) => item.status === "SUCCESS");
+  const failed = results.filter((item) => item.status !== "SUCCESS");
+
+  const summary = {
+    status: failed.length > 0 ? "PARTIAL_FAILURE_REQUIRES_REVIEW" : "SUCCESS",
+    guideCount: results.length,
+    successfulGuides: successful.length,
+    failedGuides: failed.length,
+    successfulBookingCount: successful.reduce(
+      (total, item) => total + item.bookingCount,
+      0
+    ),
+    failedGuideIds: failed.map((item) => item.guideId)
+  };
+
   console.log(
-    "AIRWALLEX LIVE WEEKLY PAYOUT CYCLE COMPLETED",
-    JSON.stringify({
-      guideCount: results.length,
-      bookingCount: results.reduce(
-        (total, item) => total + item.bookingCount,
-        0
-      )
-    })
+    "AIRWALLEX LIVE WEEKLY PAYOUT CYCLE RESULT",
+    JSON.stringify(summary)
   );
+
+  if (failed.length > 0) {
+    process.exitCode = 1;
+  }
 }
 
 try {

@@ -57,5 +57,14 @@ const AirwallexPayoutBatchSchema = new mongoose.Schema({
   timestamps: true
 });
 
+AirwallexPayoutBatchSchema.index(
+  { transferId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      transferId: { $type: "string", $gt: "" }
+    }
+  }
+);
 export default mongoose.models.AirwallexPayoutBatch ||
   mongoose.model("AirwallexPayoutBatch", AirwallexPayoutBatchSchema);

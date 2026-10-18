@@ -34,21 +34,21 @@ export async function recordAirwallexBatchTransfer(
 
   // Verificar los datos devueltos por Airwallex.
   if (
-    transfer.request_id != null &&
+    transfer.request_id == null ||
     transfer.request_id !== claimedBatch.requestId
   ) {
     throw new Error("AIRWALLEX_TRANSFER_REQUEST_MISMATCH");
   }
 
   if (
-    transfer.beneficiary_id != null &&
+    transfer.beneficiary_id == null ||
     transfer.beneficiary_id !== beneficiaryId
   ) {
     throw new Error("AIRWALLEX_TRANSFER_BENEFICIARY_MISMATCH");
   }
 
   if (
-    transfer.source_currency != null &&
+    transfer.source_currency == null ||
     transfer.source_currency !== "USD"
   ) {
     throw new Error("AIRWALLEX_TRANSFER_CURRENCY_MISMATCH");
@@ -62,7 +62,11 @@ export async function recordAirwallexBatchTransfer(
       throw new Error("AIRWALLEX_BATCH_AMOUNT_INVALID");
     }
 
-    if (transfer.source_amount != null) {
+    if (transfer.source_amount == null) {
+      throw new Error("AIRWALLEX_TRANSFER_AMOUNT_MISSING");
+    }
+
+    {
       const expected = (
         claimedBatch.amountCents / 100
       ).toFixed(2);

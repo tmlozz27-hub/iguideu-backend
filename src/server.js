@@ -1,3 +1,4 @@
+import { runGuideWelcomeOnce } from "./services/guide-welcome-runner.js";
 import * as Sentry from "@sentry/node"
 
 const SENSITIVE_KEYS = new Set([
@@ -63,6 +64,8 @@ Sentry.init({
 })
 
 import express from "express"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import cors from "cors"
 import helmet from "helmet"
 import { connectMongo } from "./services/mongo.js"
@@ -111,6 +114,38 @@ app.use((req, res, next) => {
   next()
 })
 
+const bankWebFolder = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../guide-bank-onboarding"
+)
+
+app.get("/guia/datos-bancarios", (req, res) => {
+  if (!req.path.endsWith("/")) {
+    return res.redirect(302, "/guia/datos-bancarios/")
+  }
+
+  res.setHeader("Cache-Control", "no-store")
+  return res.sendFile(path.join(bankWebFolder, "index.html"))
+})
+
+const publicBankFiles = new Set([
+  "bank-form.css",
+  "guide-login.mjs",
+  "guide-session.mjs",
+  "bank-form-controller.mjs",
+  "bank-schema.mjs",
+  "bank-dynamic-fields.mjs"
+])
+
+app.get("/guia/datos-bancarios/:file", (req, res) => {
+  if (!publicBankFiles.has(req.params.file)) {
+    return res.sendStatus(404)
+  }
+
+  res.setHeader("Cache-Control", "no-store")
+  return res.sendFile(path.join(bankWebFolder, req.params.file))
+})
+
 app.get("/api/health", (_req, res) => res.status(200).json({ status: "OK" }))
 
 app.use("/api/auth", authRoutes)
@@ -152,6 +187,16 @@ const HOST = process.env.HOST || "0.0.0.0"
 const PORT = Number(process.env.PORT || 4020)
 
 await connectMongo()
+
+if (process.env.GUIDE_WELCOME_EMAILS_ENABLED === "true") {
+  const timer = setInterval(() => {
+    runGuideWelcomeOnce().catch((error) => {
+      console.error("GUIDE_WELCOME_WORKER_ERROR", error?.message);
+    });
+  }, 60000);
+
+  timer.unref();
+}
 
 app.listen(PORT, HOST, () => {
   console.log(`Server ON -> http://${HOST}:${PORT}`)

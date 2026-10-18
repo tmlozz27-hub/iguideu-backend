@@ -24,24 +24,41 @@ export async function runAirwallexLiveWeeklyPayoutCycle(
   const results = [];
 
   for (const group of groups) {
-    const guide = await Guide.findById(group.guideId);
+    try {
+      const guide = await Guide.findById(group.guideId);
 
-    validateAirwallexGuideForPayout(
-      guide,
-      group.guideId
-    );
+      validateAirwallexGuideForPayout(
+        guide,
+        group.guideId
+      );
 
-    const result = await executeAirwallexLiveGuideBatch(
-      Booking,
-      group.bookings,
-      guide
-    );
+      const result = await executeAirwallexLiveGuideBatch(
+        Booking,
+        group.bookings,
+        guide
+      );
 
-    results.push({
-      guideId: group.guideId,
-      bookingCount: group.bookings.length,
-      result
-    });
+      results.push({
+        guideId: group.guideId,
+        bookingCount: group.bookings.length,
+        status: "SUCCESS",
+        result
+      });
+    } catch (error) {
+      const message = String(error?.message || "UNKNOWN_ERROR");
+
+      results.push({
+        guideId: group.guideId,
+        bookingCount: group.bookings.length,
+        status: "FAILED_REQUIRES_REVIEW",
+        error: message
+      });
+
+      console.error("AIRWALLEX_WEEKLY_GUIDE_FAILED", {
+        guideId: group.guideId,
+        error: message
+      });
+    }
   }
 
   return results;

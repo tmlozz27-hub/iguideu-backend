@@ -1,12 +1,21 @@
 import express from "express";
 import multer from "multer";
+import { fileTypeFromFile } from "file-type";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import crypto from "node:crypto";
+import { pipeline } from "node:stream/promises";
 import { v2 as cloudinary } from "cloudinary";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: os.tmpdir(),
+    filename: (_req, _file, cb) => cb(null, crypto.randomUUID())
+  }),
   limits: {
     fileSize: 75 * 1024 * 1024
   },
@@ -31,18 +40,99 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-function uploadBufferToCloudinary(buffer, options = {}) {
+async function uploadFileToCloudinary(filePath, options = {}) {
   return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(options, (error, result) => {
-      if (error) return reject(error);
-      resolve(result);
-    });
+    let settled = false;
+    let input;
+    let output;
 
-    stream.end(buffer);
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+
+      if (error) {
+        input?.destroy();
+        output?.destroy();
+        reject(error);
+        return;
+      }
+
+      if (!result?.secure_url || !result?.public_id) {
+        reject(new Error("CLOUDINARY_UPLOAD_RESULT_INVALID"));
+        return;
+      }
+
+      resolve(result);
+    };
+
+    try {
+      input = fs.createReadStream(filePath);
+      output = cloudinary.uploader.upload_stream(options, (error, result) => {
+        finish(error, result);
+      });
+
+      input.on("error", finish);
+      output.on("error", finish);
+      input.pipe(output);
+    } catch (error) {
+      finish(error);
+    }
   });
 }
+const activeUploads = new Set();
 
-router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
+function limitConcurrentUploads(req, res, next) {
+  const userId = String(req.user?.id || "").trim();
+
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+  }
+
+  if (activeUploads.has(userId)) {
+    return res.status(429).json({
+      ok: false,
+      error: "UPLOAD_ALREADY_IN_PROGRESS"
+    });
+  }
+
+  activeUploads.add(userId);
+
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    activeUploads.delete(userId);
+  };
+
+  res.once("finish", release);
+  res.once("close", release);
+  next();
+}
+
+const uploadMedia = upload.single("file");
+
+function handleMediaUpload(req, res, next) {
+  uploadMedia(req, res, (error) => {
+    if (!error) return next();
+
+    if (error instanceof multer.MulterError) {
+      return res.status(error.code === "LIMIT_FILE_SIZE" ? 413 : 400).json({
+        ok: false,
+        error: error.code === "LIMIT_FILE_SIZE"
+          ? "FILE_TOO_LARGE"
+          : "UPLOAD_INVALID"
+      });
+    }
+
+    console.error("UPLOAD_MULTER_ERROR", error?.message || "");
+    return res.status(500).json({
+      ok: false,
+      error: "UPLOAD_MEDIA_ERROR"
+    });
+  });
+}
+router.post("/media", requireAuth, limitConcurrentUploads, handleMediaUpload, async (req, res) => {
+  const temporaryFile = req.file?.path;
   try {
     console.log("UPLOAD_MEDIA_START", {
       hasFile: !!req.file,
@@ -74,8 +164,17 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
 
 
     const mime = String(req.file.mimetype || "");
-    const isVideo = mime.startsWith("video/");
-    const isImage = mime.startsWith("image/");
+    const detected = await fileTypeFromFile(req.file.path);
+    const detectedMime = String(detected?.mime || "");
+
+    if (!detected || (!detectedMime.startsWith("image/") && !detectedMime.startsWith("video/"))) {
+      return res.status(400).json({
+        ok: false,
+        error: "INVALID_MEDIA_CONTENT"
+      });
+    }
+    const isVideo = detectedMime.startsWith("video/");
+    const isImage = detectedMime.startsWith("image/");
 
     if (!isVideo && !isImage) {
       return res.status(400).json({
@@ -85,7 +184,7 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
       });
     }
 
-    const result = await uploadBufferToCloudinary(req.file.buffer, {
+    const result = await uploadFileToCloudinary(req.file.path, {
       folder: "iguideu/guides",
       resource_type: isVideo ? "video" : "image"
     });
@@ -111,6 +210,12 @@ router.post("/media", requireAuth, upload.single("file"), async (req, res) => {
       ok: false,
       error: "UPLOAD_MEDIA_ERROR"
     });
+  } finally {
+    if (temporaryFile) {
+      await fs.promises.unlink(temporaryFile).catch((error) => {
+        console.error("UPLOAD_TEMP_CLEANUP_ERROR", error?.message || "");
+      });
+    }
   }
 });
 
