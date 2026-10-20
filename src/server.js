@@ -1,3 +1,6 @@
+import guideBankStatusRoutes from "./routes/guide-bank-status.routes.js"
+import { fileURLToPath } from "node:url"
+import path from "node:path"
 import * as Sentry from "@sentry/node"
 
 const SENSITIVE_KEYS = new Set([
@@ -109,9 +112,42 @@ app.use((req, res, next) => {
   next()
 })
 
+const bankWebFolder = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../guide-bank-onboarding"
+)
+
+app.get(["/guia/datos-bancarios", "/guia/datos-bancarios/"], (req, res) => {
+  if (!req.path.endsWith("/")) {
+    return res.redirect(302, "/guia/datos-bancarios/")
+  }
+
+  res.setHeader("Cache-Control", "no-store")
+  return res.sendFile(path.join(bankWebFolder, "index.html"))
+})
+
+const publicBankFiles = new Set([
+  "bank-form.css",
+  "guide-login.mjs",
+  "guide-session.mjs",
+  "bank-form-controller.mjs",
+  "bank-schema.mjs",
+  "bank-dynamic-fields.mjs"
+])
+
+app.get("/guia/datos-bancarios/:file", (req, res) => {
+  if (!publicBankFiles.has(req.params.file)) {
+    return res.sendStatus(404)
+  }
+
+  res.setHeader("Cache-Control", "no-store")
+  return res.sendFile(path.join(bankWebFolder, req.params.file))
+})
+
 app.get("/api/health", (_req, res) => res.status(200).json({ status: "OK" }))
 
 app.use("/api/auth", authRoutes)
+app.use("/api/guides", guideBankStatusRoutes)
 app.use("/api/guides", guidesRoutes)
 app.use("/api/bookings", bookingsRoutes)
 app.use("/api/reservations", bookingsRoutes)
