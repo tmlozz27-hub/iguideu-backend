@@ -16,6 +16,10 @@ export async function executeAirwallexLiveGuideBatch(
     throw new Error("AIRWALLEX_GUIDE_REQUIRED");
   }
 
+  if (guide?.airwallex?.beneficiaryVerified !== true) {
+    throw new Error("AIRWALLEX_GUIDE_BENEFICIARY_NOT_VERIFIED");
+  }
+
   const beneficiaryId = guide?.airwallex?.beneficiaryId;
 
   if (
