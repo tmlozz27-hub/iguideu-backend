@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>I GUIDE U | Registro bancario</title>
+  <link rel="stylesheet" href="./bank-form.css">
+</head>
+<body>
+  <main>
+    <h1>I GUIDE U</h1>
+    <h2>Registro bancario para guías</h2>
+    <p>Ingresá con tu cuenta de I GUIDE U para continuar con la configuración de tus pagos.</p>
+
+    <form id="loginForm">
+      <label for="email">Correo electrónico</label>
+      <input id="email" type="email" autocomplete="username" required>
+
+      <label for="password">Contraseña</label>
+      <input id="password" type="password"
+             autocomplete="current-password" required>
+
+      <button id="loginButton" type="submit">Ingresar</button>
+    </form>
+
+    <p id="message" role="status" aria-live="polite"></p>
+    <p class="notice">
+      Esta página está en preparación. Todavía no registra
+      cuentas bancarias ni envía información a Airwallex.
+    </p>
+  <section id="bankDetails" hidden>
+  <h2>Datos bancarios del guía</h2>
+  <p>Completá los datos de la cuenta donde querés recibir tus pagos.</p>
+
+  <form id="bankForm" novalidate>
+  <div id="airwallexDynamicFields" hidden></div>
+  <p id="bankSchemaMessage" role="status" aria-live="polite"></p>
+    <label for="account_name">Nombre completo del titular</label>
+    <input id="account_name" name="account_name" autocomplete="name" required>
+
+        <label for="entity_type">Tipo de titular</label>
+    <select id="entity_type" name="entity_type" required>
+      <option value="PERSONAL">Persona física</option>
+      <option value="COMPANY">Empresa</option>
+    </select>
+
+    <label for="transfer_method">Método de transferencia</label>
+    <select id="transfer_method" name="transfer_method" required>
+      <option value="LOCAL">Transferencia local</option>
+      <option value="SWIFT">Transferencia internacional SWIFT</option>
+    </select>
+<label for="bank_country_code">País del banco</label>
+    <select id="bank_country_code" name="bank_country_code" required>
+  <option value="">Seleccionar país</option>
+</select>
+
+    <label for="account_currency">Moneda de recepción</label>
+    <select id="account_currency" name="account_currency" required>
+  <option value="">Seleccionar moneda</option>
+</select>
+
+    <button type="submit">
+      Validar datos bancarios
+    </button>
+  </form>
+</section>
+
+<section id="linkedBank" hidden>
+  <h2>Cuenta bancaria vinculada</h2>
+  <p>Tu cuenta bancaria ya está registrada en I GUIDE U.</p>
+  <p>No necesitás volver a ingresar tus datos bancarios.</p>
+  <p>Los pagos estarán sujetos a la validación y habilitación del servicio de transferencias.</p>
+</section>
+
+</main>
+
+
+<script type="module" src="./guide-login.mjs"></script>
+  <script type="module" src="./bank-form-controller.mjs"></script>
+</body>
+</html>

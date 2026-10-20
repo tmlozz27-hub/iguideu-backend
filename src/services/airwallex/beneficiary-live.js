@@ -38,9 +38,15 @@ export async function validateAirwallexLiveBeneficiary({
   );
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       `AIRWALLEX_LIVE_BENEFICIARY_VALIDATION_FAILED_${response.status}`
     );
+
+    error.httpStatus = response.status;
+    error.operation = "BENEFICIARY_VALIDATE";
+    error.safeToRetryCreation = false;
+
+    throw error;
   }
 
   return response.json();
@@ -48,7 +54,8 @@ export async function validateAirwallexLiveBeneficiary({
 
 export async function createAirwallexLiveBeneficiary({
   schemaInput,
-  beneficiary
+  beneficiary,
+  externalIdentifier
 }) {
   if (process.env.AIRWALLEX_ENV !== "live") {
     throw new Error("AIRWALLEX_LIVE_ENV_REQUIRED");
@@ -67,6 +74,15 @@ export async function createAirwallexLiveBeneficiary({
   validateAirwallexBeneficiaryDataAgainstSchema(schema, beneficiary);
 
   const apiPayload = buildAirwallexLiveBeneficiaryPayload(beneficiary);
+
+  if (
+    typeof externalIdentifier !== "string" ||
+    !/^IGUIDEU-GUIDE-[a-fA-F0-9]{24}$/.test(externalIdentifier)
+  ) {
+    throw new Error("AIRWALLEX_EXTERNAL_IDENTIFIER_INVALID");
+  }
+
+  apiPayload.beneficiary.additional_info.external_identifier = externalIdentifier;
 
   const token = await airwallexLiveLogin();
 
