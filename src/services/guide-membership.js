@@ -8,107 +8,78 @@ function asObjectId(value) {
 function pickGuideFilter(guideId) {
   const raw = String(guideId || "").trim();
   if (!raw) return null;
-
   const objectId = asObjectId(raw);
-  if (objectId) return { _id: objectId };
-
-  return { guideId: raw };
+  return objectId ? { _id: objectId } : { guideId: raw };
 }
 
+// Both writes belong to one transaction: a retry cannot leave only one updated.
+// MongoDB transactions require a replica set or sharded cluster.
 export async function recordGuidePaidBooking(booking, source = "") {
+  if (!mongoose.connection?.db || !booking) {
+    return { ok: false, reason: "missing_db_or_booking" };
+  }
+  const bookingId = asObjectId(booking._id);
+  const guideId = String(booking.guideId || "").trim();
+  const guideFilter = pickGuideFilter(guideId);
+  if (!bookingId || !guideFilter) {
+    return { ok: false, reason: "invalid_booking_or_guide_id" };
+  }
+
+  const bookings = mongoose.connection.db.collection("bookings");
+  const guides = mongoose.connection.db.collection("guides");
+  const session = await mongoose.startSession();
   try {
-    const db = mongoose.connection?.db;
-    if (!db || !booking) {
-      return { ok: false, skipped: true, reason: "missing_db_or_booking" };
-    }
-
-    const bookingId = String(booking._id || "").trim();
-    const guideId = String(booking.guideId || "").trim();
-
-    if (!bookingId || !guideId) {
-      return { ok: false, skipped: true, reason: "missing_booking_or_guide_id" };
-    }
-
-    const bookingsCol = db.collection("bookings");
-    const guidesCol = db.collection("guides");
-
-    const trackNow = new Date();
-
-    const markBooking = await bookingsCol.updateOne(
-      {
-        _id: asObjectId(bookingId),
-        membershipTrackedAt: { $exists: false }
-      },
-      {
-        $set: {
-          membershipTrackedAt: trackNow,
-          membershipTrackedFrom: String(source || "")
-        }
+    let outcome = null;
+    await session.withTransaction(async () => {
+      const existing = await bookings.findOne(
+        { _id: bookingId },
+        { session, projection: { status: 1, paidAt: 1, membershipTrackedAt: 1, guideId: 1 } }
+      );
+      if (!existing) throw new Error("booking_not_found");
+      if (!["PAID", "COMPLETED"].includes(existing.status) || !existing.paidAt) {
+        throw new Error("booking_not_paid");
       }
-    );
-
-    if (!markBooking.modifiedCount) {
-      return { ok: true, skipped: true, reason: "already_tracked" };
-    }
-
-    const guideFilter = pickGuideFilter(guideId);
-    if (!guideFilter) {
-      return { ok: false, skipped: true, reason: "invalid_guide_filter" };
-    }
-
-    const guide = await guidesCol.findOne(guideFilter);
-    if (!guide) {
-      return { ok: false, skipped: true, reason: "guide_not_found" };
-    }
-
-    const totalPaidBookings = Number(guide?.stats?.totalPaidBookings || 0);
-    const nextTotalPaidBookings = totalPaidBookings + 1;
-    const now = new Date();
-
-    const membership = guide?.membership || {};
-    const stats = guide?.stats || {};
-
-    const nextMembership = {
-      active: Boolean(membership.active),
-      required: nextTotalPaidBookings >= 1,
-      monthlyFeeUsd: Number(membership.monthlyFeeUsd || 10),
-      requiredFromBookingCount: Number(membership.requiredFromBookingCount || 2),
-      startedAt: membership.startedAt || null
-    };
-
-    const nextStats = {
-      totalPaidBookings: nextTotalPaidBookings,
-      firstPaidBookingAt: stats.firstPaidBookingAt || now,
-      secondPaidBookingAt:
-        nextTotalPaidBookings >= 2 ? stats.secondPaidBookingAt || now : stats.secondPaidBookingAt || null,
-      lastPaidBookingAt: now,
-      lastPaidBookingId: bookingId
-    };
-
-    await guidesCol.updateOne(
-      guideFilter,
-      {
-        $set: {
-          membership: nextMembership,
-          stats: nextStats,
-          updatedAt: now
-        }
+      if (String(existing.guideId || "") !== guideId) throw new Error("guide_id_mismatch");
+      if (existing.membershipTrackedAt) {
+        outcome = { ok: true, skipped: true, reason: "already_tracked" };
+        return;
       }
-    );
 
-    return {
-      ok: true,
-      skipped: false,
-      guideId,
-      bookingId,
-      totalPaidBookings: nextTotalPaidBookings,
-      membershipRequired: nextMembership.required
-    };
+      const guide = await guides.findOne(guideFilter, { session, projection: { _id: 1 } });
+      if (!guide) throw new Error("guide_not_found");
+      const now = new Date();
+      const marked = await bookings.updateOne(
+        { _id: bookingId, membershipTrackedAt: null },
+        { $set: { membershipTrackedAt: now, membershipTrackedFrom: String(source || "") } },
+        { session }
+      );
+      if (marked.modifiedCount !== 1) throw new Error("booking_tracking_conflict");
+
+      // Pipeline updates calculate the next count on the server, avoiding lost increments.
+      const count = { $add: [{ $ifNull: ["$stats.totalPaidBookings", 0] }, 1] };
+      const updated = await guides.updateOne(
+        { _id: guide._id },
+        [{ $set: {
+          "stats.firstPaidBookingAt": { $ifNull: ["$stats.firstPaidBookingAt", now] },
+          "stats.secondPaidBookingAt": {
+            $cond: [ { $gte: [count, 2] }, { $ifNull: ["$stats.secondPaidBookingAt", now] }, { $ifNull: ["$stats.secondPaidBookingAt", null] } ]
+          },
+          "stats.lastPaidBookingAt": now,
+          "stats.lastPaidBookingId": String(bookingId),
+          "stats.totalPaidBookings": count,
+          "membership.required": true,
+          "membership.monthlyFeeUsd": { $ifNull: ["$membership.monthlyFeeUsd", 10] },
+          "membership.requiredFromBookingCount": { $ifNull: ["$membership.requiredFromBookingCount", 2] }
+        } }],
+        { session }
+      );
+      if (updated.matchedCount !== 1) throw new Error("guide_update_failed");
+      outcome = { ok: true, skipped: false, guideId, bookingId: String(bookingId) };
+    });
+    return outcome || { ok: false, reason: "transaction_no_result" };
   } catch (error) {
-    return {
-      ok: false,
-      skipped: true,
-      reason: error?.message || "guide_membership_track_error"
-    };
+    return { ok: false, reason: error?.message || "membership_transaction_failed" };
+  } finally {
+    await session.endSession();
   }
 }
