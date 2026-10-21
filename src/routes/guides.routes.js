@@ -823,9 +823,7 @@ router.post("/", requireAuth, async (req, res) => {
       lng
     } = req.body || {};
 
-    const cleanPassword = String(password || "").trim();
-
-    if (!name || !email || !city || !country || !cleanPassword) {
+    if (!name || !email || !city || !country) {
       return res.status(400).json({
         error: "MISSING_REQUIRED_FIELDS"
       });
@@ -849,35 +847,24 @@ router.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    const usersCol = db.collection("users");
-
-    const existingUser = await usersCol.findOne({
-      email: cleanEmail
-    });
-
-    if (existingUser) {
-      return res.status(409).json({
-        ok: false,
-        error: "EMAIL_ALREADY_EXISTS"
-      });
+    if (req.user?.role !== "guide") {
+      return res.status(403).json({ ok: false, error: "GUIDE_ROLE_REQUIRED" });
     }
 
-    const now = new Date();
+    const usersCol = db.collection("users");
+    const existingUser = await usersCol.findOne({ email: cleanEmail });
 
-    await usersCol.insertOne({
-      name: String(name).trim(),
-      email: cleanEmail,
-      password: hashPassword(cleanPassword),
-      role: "guide",
-      phone: phone ? String(phone).trim() : "",
-      city: city ? String(city).trim() : "",
-      country: country ? String(country).trim() : "",
-      bio: bio ? String(bio).trim() : "",
-      createdAt: now,
-      updatedAt: now
-    });
-
+    if (!existingUser || String(existingUser.role) !== "guide") {
+      return res.status(403).json({ ok: false, error: "GUIDE_ROLE_REQUIRED" });
+    }
     const guidesCol = db.collection("guides");
+    const existingGuide = await guidesCol.findOne({ email: cleanEmail });
+    if (existingGuide) {
+      return res.status(409).json({ ok: false, error: "GUIDE_ALREADY_EXISTS" });
+    }
+
+
+    const now = new Date();
 
     const doc = {
       name: String(name).trim(),
