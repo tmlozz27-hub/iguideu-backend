@@ -17,17 +17,21 @@
       <input id="email" type="email" autocomplete="username" required>
 
       <label for="password">Contraseña</label>
-      <input id="password" type="password"
-             autocomplete="current-password" required>
+      <div style="position:relative">
+  <input id="password" type="password"
+         autocomplete="current-password" required
+         style="box-sizing:border-box;width:100%;padding-right:55px">
+  <button type="button" id="passwordEye"
+          aria-label="Mostrar contraseña"
+          style="position:absolute!important;right:12px!important;top:50%!important;left:auto!important;transform:translateY(-50%)!important;width:36px!important;height:36px!important;min-width:0!important;margin:0!important;padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;cursor:pointer;color:#333!important;font-size:20px!important;display:flex!important;align-items:center!important;justify-content:center!important">
+    &#128065;
+  </button>
+</div>
 
       <button id="loginButton" type="submit">Ingresar</button>
     </form>
 
     <p id="message" role="status" aria-live="polite"></p>
-    <p class="notice">
-      Esta página está en preparación. Todavía no registra
-      cuentas bancarias ni envía información a Airwallex.
-    </p>
   <section id="bankDetails" hidden>
   <h2>Datos bancarios del guía</h2>
   <p>Completá los datos de la cuenta donde querés recibir tus pagos.</p>
@@ -77,5 +81,13 @@
 
 <script type="module" src="./guide-login.mjs"></script>
   <script type="module" src="./bank-form-controller.mjs"></script>
+<script>
+document.getElementById("passwordEye").addEventListener("click", function () {
+  const campo = document.getElementById("password");
+  const mostrar = campo.type === "password";
+  campo.type = mostrar ? "text" : "password";
+  this.setAttribute("aria-label", mostrar ? "Ocultar contraseña" : "Mostrar contraseña");
+});
+</script>
 </body>
 </html>
