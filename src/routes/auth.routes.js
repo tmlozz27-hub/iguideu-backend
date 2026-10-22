@@ -445,6 +445,46 @@ router.post("/login", loginLimiter, async (req, res) => {
   }
 });
 
+
+async function sendRegistrationWelcome({ email, name, role }) {
+  if (!process.env.RESEND_API_KEY) {
+    console.error("WELCOME_EMAIL_NOT_CONFIGURED");
+    return;
+  }
+
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const isGuide = role === "guide";
+    const subject = isGuide
+      ? "Bienvenido a I GUIDE U - Guia"
+      : "Bienvenido a I GUIDE U - Viajero";
+
+    const text = "Hola " + name + ", bienvenido a I GUIDE U. Tu cuenta de " +
+      (isGuide ? "guia" : "viajero") + " fue creada correctamente." +
+      (isGuide
+        ? "\n\nPara registrar tu cuenta bancaria y recibir tus pagos, ingres├í aqu├¡:\nhttps://api.i-guide-u.com/guia/datos-bancarios/\n\nInici├í sesi├│n con tu cuenta de I GUIDE U."
+        : "");
+
+    const result = await resend.emails.send({
+      from: process.env.MAIL_FROM || "I GUIDE U <onboarding@resend.dev>",
+      to: email,
+      subject,
+      text
+    });
+
+    if (result.error) {
+      console.error("WELCOME_EMAIL_FAILED", result.error.message);
+    } else {
+      console.log("WELCOME_EMAIL_SENT", {
+        role,
+        messageId: result.data?.id
+      });
+    }
+  } catch (error) {
+    console.error("WELCOME_EMAIL_FAILED", error.message);
+  }
+}
+
 router.post("/register", registerLimiter, async (req, res) => {
   try {
     const name = String(req.body?.name || "").trim();
@@ -481,6 +521,7 @@ router.post("/register", registerLimiter, async (req, res) => {
       email,
       role
     });
+  void sendRegistrationWelcome({ email, name, role });
 
     return res.status(201).json({
       ok: true,
