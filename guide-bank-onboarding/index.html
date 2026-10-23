@@ -85,7 +85,7 @@
 document.getElementById("passwordEye").addEventListener("click", function () {
   const campo = document.getElementById("password");
   const mostrar = campo.type === "password";
-  campo.type = mostrar ? "text" : "password";
+  campo.type = mostrar ? "text" : "password"; this.innerHTML = mostrar ? "&#128584;" : "&#128065;";
   this.setAttribute("aria-label", mostrar ? "Ocultar contraseña" : "Mostrar contraseña");
 });
 </script>

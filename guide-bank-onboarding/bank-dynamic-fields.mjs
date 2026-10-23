@@ -1,36 +1,62 @@
 const LABELS = {
   account_number: "Número de cuenta bancaria",
-  account_name: "Nombre del titular",
+  account_name: "Nombre y apellido del titular",
   bank_name: "Nombre del banco",
   bank_code: "Código del banco",
   branch_code: "Código de sucursal",
-  iban: "IBAN de la cuenta",
-  swift_code: "Código internacional del banco (SWIFT/BIC)",
-  bic: "Código internacional del banco (BIC)",
+  iban: "IBAN",
+  swift_code: "Código SWIFT / BIC",
+  bic: "Código BIC",
   routing_number: "Número de ruta bancaria",
   sort_code: "Código bancario",
-  clabe: "CLABE bancaria",
-  cbu: "CBU bancario",
-  personal_id_number: "Número de documento de identidad",
-  local_clearing_system: "Sistema bancario local",
-  transfer_method: "Forma de transferencia",
-  entity_type: "Tipo de titular",
-  beneficiary_type: "Tipo de cuenta",
+  clabe: "CLABE",
+  cbu: "CBU",
+  personal_id_number: "Documento o identificación fiscal",
+  local_clearing_system: "Sistema bancario",
   nickname: "Nombre para identificar la cuenta",
-  personal_email: "Correo electrónico del titular",
+  personal_email: "Correo electrónico",
+  country_code: "País",
   bank_country_code: "País del banco",
-  account_currency: "Moneda de la cuenta"
+  street_address: "Dirección",
+  city: "Ciudad",
+  postcode: "Código postal",
+  personal_id_type: "Tipo de identificación",
+  beneficiary_type: "Tipo de cuenta",
+  type: "Tipo de cuenta"
 };
+
+const VALUES = {
+  BANK_ACCOUNT: "Cuenta bancaria",
+  DIGITAL_WALLET: "Billetera digital",
+  INDIVIDUAL_TAX_ID: "Identificación fiscal personal",
+  ENTITY_TAX_ID: "Identificación fiscal de empresa",
+  PERSONAL: "Persona",
+  COMPANY: "Empresa",
+  LOCAL: "Transferencia local",
+  SWIFT: "Transferencia internacional"
+};
+
+const countryNames = new Intl.DisplayNames(["es"], {type:"region"});
 
 function friendlyLabel(field) {
   const key = String(field.key || "");
-  if (LABELS[key]) return LABELS[key];
-
   const last = key.split(".").pop();
-  if (LABELS[last]) return LABELS[last];
+  return LABELS[key] || LABELS[last] ||
+    String(field.label || field.name || last)
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, x => x.toUpperCase());
+}
 
-  const raw = String(field.label || field.name || key);
-  return raw.replace(/_/g, " ").replace(/\b\w/g, x => x.toUpperCase());
+function friendlyValue(value) {
+  const v = String(value);
+  if (VALUES[v]) return VALUES[v];
+  if (/^[A-Z]{2}$/.test(v)) {
+    try {
+      const name = countryNames.of(v);
+      if (name && name !== v) return name;
+    } catch {}
+  }
+  return v.replace(/_/g, " ");
 }
 
 export function renderGuideBankFields(schema, container) {
@@ -39,53 +65,76 @@ export function renderGuideBankFields(schema, container) {
   }
 
   const fragment = document.createDocumentFragment();
-  const existingFields = new Set([
-    "bank_country_code",
-    "account_currency",
+  const existing = new Set([
+    "bank_country_code", "account_currency",
     "account_name", "entity_type", "transfer_method"
   ]);
 
   for (const field of schema.fields) {
-    if (existingFields.has(field?.key)) continue;
-    if (typeof field?.key !== "string" || !field.key) {
+    const key = field?.key;
+    if (typeof key !== "string" || !key) {
       throw new Error("BANK_SCHEMA_FIELD_INVALID");
+    }
+    if (existing.has(key)) continue;
+
+    const pattern = field.rule?.pattern;
+    const enumPattern = typeof pattern === "string" &&
+      !pattern.startsWith("^") &&
+      !pattern.endsWith("$") &&
+      pattern.includes("|");
+
+    const choices = Array.isArray(field.options) ? field.options :
+      Array.isArray(field.enum) ? field.enum :
+      enumPattern ? pattern.split("|").map(x => x.trim()).filter(Boolean) :
+      null;
+
+    const values = choices?.map(x =>
+      typeof x === "string" ? x : String(x.value ?? "")
+    );
+
+    const last = key.split(".").pop();
+
+    // Tipo de cuenta: únicamente se admite cuenta bancaria.
+    if (last === "type" || last === "beneficiary_type") {
+      if (!values || values.includes("BANK_ACCOUNT")) {
+        const hidden = document.createElement("input");
+        hidden.type = "hidden";
+        hidden.name = key;
+        hidden.value = "BANK_ACCOUNT";
+        fragment.appendChild(hidden);
+        continue;
+      }
+      throw new Error("BANK_ACCOUNT_NOT_SUPPORTED");
+    }
+
+    // País: usar el país bancario seleccionado por el guía.
+    if (last === "country_code") {
+      const selected = document.getElementById("bank_country_code")?.value;
+      if (selected && (!values || values.includes(selected))) {
+        const hidden = document.createElement("input");
+        hidden.type = "hidden";
+        hidden.name = key;
+        hidden.value = selected;
+        fragment.appendChild(hidden);
+        continue;
+      }
     }
 
     const label = document.createElement("label");
     label.textContent = friendlyLabel(field);
 
-    const pattern = field.rule?.pattern;
-    const isEnumPattern =
-      typeof pattern === "string" &&
-      !pattern.startsWith("^") &&
-      !pattern.endsWith("$") &&
-      pattern.includes("|");
-
-    const choices = Array.isArray(field.options)
-      ? field.options
-      : Array.isArray(field.enum)
-      ? field.enum
-      : isEnumPattern
-      ? pattern.split("|").map(x => x.trim()).filter(Boolean)
-      : null;
-
     let control;
-
-    if (choices && choices.length > 0) {
+    if (choices?.length) {
       control = document.createElement("select");
       control.appendChild(new Option("Seleccionar", ""));
 
       for (const choice of choices) {
+        const value = typeof choice === "string" ?
+          choice : String(choice.value ?? "");
+
         const option = document.createElement("option");
-
-        if (typeof choice === "string") {
-          option.value = choice;
-          option.textContent = choice;
-        } else {
-          option.value = String(choice.value ?? "");
-          option.textContent = String(choice.label ?? choice.value ?? "");
-        }
-
+        option.value = value;
+        option.textContent = friendlyValue(value);
         control.appendChild(option);
       }
     } else {
@@ -98,9 +147,8 @@ export function renderGuideBankFields(schema, container) {
       }
     }
 
-    control.name = field.key;
+    control.name = key;
     control.required = field.required === true;
-
     label.appendChild(control);
     fragment.appendChild(label);
   }
