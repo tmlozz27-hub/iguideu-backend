@@ -12,8 +12,8 @@ const LABELS = {
   clabe: "CLABE",
   cbu: "CBU",
   personal_id_number: "Documento o identificación fiscal",
-  local_clearing_system: "Sistema bancario",
-  nickname: "Nombre para identificar la cuenta",
+  local_clearing_system: "Cuenta bancaria",
+  nickname: "Alias de la cuenta (si corresponde)",
   personal_email: "Correo electrónico",
   country_code: "País",
   bank_country_code: "País del banco",
@@ -75,7 +75,7 @@ export function renderGuideBankFields(schema, container) {
     if (typeof key !== "string" || !key) {
       throw new Error("BANK_SCHEMA_FIELD_INVALID");
     }
-    if (existing.has(key)) continue;
+    if (existing.has(key) || key === "nickname") continue;
 
     const pattern = field.rule?.pattern;
     const enumPattern = typeof pattern === "string" &&
