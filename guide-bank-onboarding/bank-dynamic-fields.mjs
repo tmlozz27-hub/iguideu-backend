@@ -12,7 +12,7 @@ const LABELS = {
   clabe: "CLABE",
   cbu: "CBU",
   personal_id_number: "Documento o identificación fiscal",
-  local_clearing_system: "Cuenta bancaria",
+  local_clearing_system: "Red bancaria",
   nickname: "Alias de la cuenta (si corresponde)",
   personal_email: "Correo electrónico",
   country_code: "País",
