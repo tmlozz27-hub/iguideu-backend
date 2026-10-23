@@ -65,6 +65,15 @@ export function renderGuideBankFields(schema, container) {
   }
 
   const fragment = document.createDocumentFragment();
+
+  const bankLabel = document.createElement("label");
+  bankLabel.textContent = "Nombre del banco";
+  const bankInput = document.createElement("input");
+  bankInput.type = "text";
+  bankInput.name = "bank_name";
+  bankInput.autocomplete = "organization";
+  bankLabel.appendChild(bankInput);
+  fragment.appendChild(bankLabel);
   const existing = new Set([
     "bank_country_code", "account_currency",
     "account_name", "entity_type", "transfer_method"
