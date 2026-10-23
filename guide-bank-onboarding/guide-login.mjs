@@ -47,3 +47,17 @@ form.addEventListener("submit", async (event) => {
     button.disabled = false;
   }
 });
+
+
+function toggleGuidePassword() {
+  const campo = document.getElementById("password");
+  const boton = document.getElementById("passwordEye");
+  if (!campo || !boton) return;
+
+  const mostrar = campo.type === "password";
+  campo.type = mostrar ? "text" : "password";
+  boton.innerHTML = mostrar ? "&#128584;" : "&#128065;";
+  boton.setAttribute("aria-label", mostrar ? "Ocultar contraseña" : "Mostrar contraseña");
+}
+
+document.getElementById("passwordEye").addEventListener("click", toggleGuidePassword);

@@ -77,18 +77,6 @@
 
 <script type="module" src="./guide-login.mjs"></script>
   <script type="module" src="./bank-form-controller.mjs"></script>
-<script>
-function toggleGuidePassword() {
-  const campo = document.getElementById("password");
-  const boton = document.getElementById("passwordEye");
-  if (!campo || !boton) return;
 
-  const mostrar = campo.type === "password";
-  campo.type = mostrar ? "text" : "password";
-  boton.innerHTML = mostrar ? "&#128584;" : "&#128065;";
-  boton.setAttribute("aria-label", boton.textContent);
-}
-document.getElementById("passwordEye").onclick = toggleGuidePassword;
-</script>
 </body>
 </html>
