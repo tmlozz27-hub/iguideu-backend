@@ -21,11 +21,7 @@
   <input id="password" type="password"
          autocomplete="current-password" required
          style="box-sizing:border-box;width:100%;padding-right:55px">
-  <button type="button" id="passwordEye"
-          aria-label="Mostrar contraseña"
-          style="position:absolute!important;right:12px!important;top:50%!important;left:auto!important;transform:translateY(-50%)!important;width:36px!important;height:36px!important;min-width:0!important;margin:0!important;padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;cursor:pointer;color:#333!important;font-size:20px!important;display:flex!important;align-items:center!important;justify-content:center!important">
-    &#128065;
-  </button>
+  <button type="button" id="passwordEye" aria-label="Mostrar contraseña" style="position:relative;display:inline-block;width:auto;height:auto;margin:8px 0;padding:8px 14px;cursor:pointer;z-index:10">Ver contraseña</button>
 </div>
 
       <button id="loginButton" type="submit">Ingresar</button>
@@ -85,7 +81,7 @@
 document.getElementById("passwordEye").addEventListener("click", function () {
   const campo = document.getElementById("password");
   const mostrar = campo.type === "password";
-  campo.type = mostrar ? "text" : "password"; this.innerHTML = mostrar ? "&#128584;" : "&#128065;";
+  campo.type = mostrar ? "text" : "password"; this.textContent = mostrar ? "Ocultar contraseña" : "Ver contraseña";
   this.setAttribute("aria-label", mostrar ? "Ocultar contraseña" : "Mostrar contraseña");
 });
 </script>
