@@ -439,7 +439,13 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => { if (r
           "AIRWALLEX_TRANSFER_METHOD_INVALID"
       ]);
 
-      if (localValidationErrors.has(validationError?.message)) {
+      if (
+        localValidationErrors.has(validationError?.message) ||
+        (
+          validationError?.operation === "BENEFICIARY_VALIDATE" &&
+          validationError?.httpStatus === 400
+        )
+      ) {
         await releaseGuideBeneficiaryClaim(guidesCol, email, claimId);
 
         return res.status(400).json({

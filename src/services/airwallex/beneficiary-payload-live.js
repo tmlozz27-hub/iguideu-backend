@@ -1,6 +1,6 @@
-﻿const BANK_FIELDS = new Set([
+const BANK_FIELDS = new Set([
   "bank_country_code", "account_currency", "local_clearing_system",
-  "account_number", "account_name", "iban", "swift_code",
+  "account_number", "account_name", "iban", "swift_code", "bic",
   "bank_name", "bank_code", "branch_code", "routing_number",
   "sort_code", "bsb_number", "clabe", "cbu"
 ]);
@@ -11,11 +11,11 @@ const ADDRESS_FIELDS = new Set([
 ]);
 
 const ADDITIONAL_FIELDS = new Set([
-  "personal_id_type", "personal_id_number"
+  "personal_id_type", "personal_id_number", "personal_email"
 ]);
 
 const RESERVED_FIELDS = new Set([
-  "type", "entity_type", "transfer_method", "transfer_methods"
+  "type", "entity_type", "transfer_method", "transfer_methods", "nickname", "beneficiary_type"
 ]);
 
 export function buildAirwallexLiveBeneficiaryPayload(data) {
@@ -25,6 +25,10 @@ export function buildAirwallexLiveBeneficiaryPayload(data) {
 
   if (data.type !== "BANK_ACCOUNT" ||
       !["PERSONAL", "COMPANY"].includes(data.entity_type)) {
+    throw new Error("AIRWALLEX_BENEFICIARY_TYPE_INVALID");
+  }
+
+  if (data.beneficiary_type !== undefined && data.beneficiary_type !== "BANK_ACCOUNT") {
     throw new Error("AIRWALLEX_BENEFICIARY_TYPE_INVALID");
   }
 
@@ -61,5 +65,5 @@ export function buildAirwallexLiveBeneficiaryPayload(data) {
     throw new Error("AIRWALLEX_TRANSFER_METHOD_INVALID");
   }
 
-  return { beneficiary, transfer_methods: methods };
+  return { beneficiary, transfer_methods: methods, ...(data.nickname ? { nickname: data.nickname } : {}) };
 }
