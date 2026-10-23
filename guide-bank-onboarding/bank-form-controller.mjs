@@ -88,7 +88,7 @@ async function submitBankDetails(event) {
 
   if (saving) return; if (!schemaSelection || schemaSelection !== [country.value, currency.value, entityType.value, transferMethod.value].join("|")) { message.textContent = "Los datos bancarios cambiaron. Esperá a que se actualicen los requisitos."; return; } if (!currentSchema || !form || !["LOCAL", "SWIFT"].includes(transferMethod.value) || transferMethod.disabled) { message.textContent = "Esperá a que se carguen los requisitos bancarios."; return; }
 
-  const allowedFields = new Set([
+  const allowedFields = new Set(["bank_name",
     "bank_country_code",
     "account_currency",
     "account_name",

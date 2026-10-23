@@ -120,15 +120,16 @@ export function renderGuideBankFields(schema, container) {
       }
     }
 
-    if (key === "local_clearing_system" && values?.length === 1 && values[0]) {
-      const hidden = document.createElement("input");
-      hidden.type = "hidden";
-      hidden.name = key;
-      hidden.value = values[0];
-      fragment.appendChild(hidden);
+    if (key === "local_clearing_system") {
+      if (values?.length === 1 && values[0]) {
+        const hidden = document.createElement("input");
+        hidden.type = "hidden";
+        hidden.name = key;
+        hidden.value = values[0];
+        fragment.appendChild(hidden);
+      }
       continue;
     }
-
     const label = document.createElement("label");
     label.textContent = friendlyLabel(field);
 
