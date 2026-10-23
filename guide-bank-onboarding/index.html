@@ -37,36 +37,36 @@
   <p>Completá los datos de la cuenta donde querés recibir tus pagos.</p>
 
   <form id="bankForm" novalidate>
+  <label for="bank_country_code">País donde tenés tu cuenta bancaria</label>
+  <select id="bank_country_code" name="bank_country_code" required>
+    <option value="">Seleccionar país</option>
+  </select>
+
+  <label for="account_currency">Moneda en la que querés recibir tus pagos</label>
+  <select id="account_currency" name="account_currency" required>
+    <option value="">Seleccionar moneda</option>
+  </select>
+
+  <label for="account_name">Nombre completo del titular de la cuenta</label>
+  <input id="account_name" name="account_name" autocomplete="name" required>
+
+  <label for="entity_type">La cuenta pertenece a</label>
+  <select id="entity_type" name="entity_type" required>
+    <option value="PERSONAL">Una persona</option>
+    <option value="COMPANY">Una empresa</option>
+  </select>
+
+  <label for="transfer_method" hidden>Forma de recibir el pago</label>
+  <select id="transfer_method" name="transfer_method" hidden required>
+    <option value="LOCAL">Transferencia bancaria local</option>
+    <option value="SWIFT">Transferencia bancaria internacional</option>
+  </select>
+
   <div id="airwallexDynamicFields" hidden></div>
   <p id="bankSchemaMessage" role="status" aria-live="polite"></p>
-    <label for="account_name">Nombre completo del titular</label>
-    <input id="account_name" name="account_name" autocomplete="name" required>
 
-        <label for="entity_type">Tipo de titular</label>
-    <select id="entity_type" name="entity_type" required>
-      <option value="PERSONAL">Persona física</option>
-      <option value="COMPANY">Empresa</option>
-    </select>
-
-    <label for="transfer_method">Método de transferencia</label>
-    <select id="transfer_method" name="transfer_method" required>
-      <option value="LOCAL">Transferencia local</option>
-      <option value="SWIFT">Transferencia internacional SWIFT</option>
-    </select>
-<label for="bank_country_code">País del banco</label>
-    <select id="bank_country_code" name="bank_country_code" required>
-  <option value="">Seleccionar país</option>
-</select>
-
-    <label for="account_currency">Moneda de recepción</label>
-    <select id="account_currency" name="account_currency" required>
-  <option value="">Seleccionar moneda</option>
-</select>
-
-    <button type="submit">
-      Validar datos bancarios
-    </button>
-  </form>
+  <button type="submit">Guardar mis datos bancarios</button>
+</form>
 </section>
 
 <section id="linkedBank" hidden>
