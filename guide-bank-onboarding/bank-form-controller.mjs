@@ -152,7 +152,7 @@ async function submitBankDetails(event) {
   };
 
   // SEGURIDAD: mantener false hasta autorización expresa.
-  const onboardingEnabled = true;
+  const onboardingEnabled = false;
 
   if (!onboardingEnabled) {
     message.textContent =
