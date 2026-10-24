@@ -1,3 +1,4 @@
+import { reserveUniqueGuideBankAccount, releaseUniqueGuideBankAccount, confirmUniqueGuideBankAccount } from "../services/airwallex/guide-bank-unique.js";
 import { releaseGuideBeneficiaryClaim } from "../services/airwallex/guide-beneficiary-release.js";
 import { linkAirwallexBeneficiaryToGuide } from "../services/airwallex/guide-beneficiary-link.js";
 import { recordCreatedAirwallexBeneficiary } from "../services/airwallex/guide-beneficiary-recovery.js";
@@ -418,12 +419,39 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => { if (r
         error: "AIRWALLEX_LIVE_BENEFICIARIES_DISABLED"
       });
     }
+    if (process.env.BANK_ACCOUNT_UNIQUENESS_READY !== "true") {
+      return res.status(503).json({
+        ok: false,
+        error: "BANK_ACCOUNT_UNIQUENESS_NOT_READY"
+      });
+    }
     const externalIdentifier = `IGUIDEU-GUIDE-${String(guide._id)}`;
     const claimId = await claimGuideBeneficiaryOnboarding(
       guidesCol,
       email,
       schemaInput
     );
+
+    let bankFingerprint;
+
+    try {
+      bankFingerprint = await reserveUniqueGuideBankAccount(
+        guidesCol,
+        guide._id,
+        beneficiary
+      );
+    } catch (bankError) {
+      await releaseGuideBeneficiaryClaim(guidesCol, email, claimId);
+
+      if (bankError.message === "BANK_ACCOUNT_ALREADY_REGISTERED") {
+        return res.status(409).json({
+          ok: false,
+          error: "BANK_ACCOUNT_ALREADY_REGISTERED"
+        });
+      }
+
+      throw bankError;
+    }
 
     try {
       await validateAirwallexLiveBeneficiary({
@@ -446,6 +474,11 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => { if (r
           validationError?.httpStatus === 400
         )
       ) {
+        await releaseUniqueGuideBankAccount(
+          guidesCol,
+          guide._id,
+          bankFingerprint
+        );
         await releaseGuideBeneficiaryClaim(guidesCol, email, claimId);
 
         return res.status(400).json({
@@ -455,6 +488,12 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => { if (r
         });
       }
 
+      await releaseUniqueGuideBankAccount(
+        guidesCol,
+        guide._id,
+        bankFingerprint
+      );
+      await releaseGuideBeneficiaryClaim(guidesCol, email, claimId);
       throw validationError;
     }
 
@@ -471,6 +510,12 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => { if (r
       created.id
     );
 
+    await confirmUniqueGuideBankAccount(
+      guidesCol,
+      guide._id,
+      bankFingerprint,
+      created.id
+    );
     const linked = await linkAirwallexBeneficiaryToGuide(
       guidesCol,
       email,
@@ -478,6 +523,7 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => { if (r
       schemaInput,
       claimId
     );
+
     return res.status(200).json({
       ok: true,
       airwallex: {
@@ -492,7 +538,9 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => { if (r
   } catch (error) {
     console.error("AIRWALLEX_GUIDE_ONBOARDING_ERROR", error.message);
 
-    return res.status(409).json({
+    const status = error?.status === 409 ? 409 : 500;
+
+    return res.status(status).json({
       ok: false,
       error: "AIRWALLEX_GUIDE_ONBOARDING_REVIEW_REQUIRED",
       retryAllowed: false

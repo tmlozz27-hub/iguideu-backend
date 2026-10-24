@@ -67,14 +67,16 @@ export function renderGuideBankFields(schema, container) {
   const fragment = document.createDocumentFragment();
 
   const bankLabel = document.createElement("label");
-  bankLabel.textContent = "Nombre del banco";
+  bankLabel.textContent = window.guideBankLanguage === "en" ? "Bank name" : "Nombre del banco";
   const bankInput = document.createElement("input");
   bankInput.type = "text";
   bankInput.name = "bank_name";
   bankInput.autocomplete = "organization";
+  bankInput.required = true;
   bankLabel.appendChild(bankInput);
   fragment.appendChild(bankLabel);
   const existing = new Set([
+    "bank_name",
     "bank_country_code", "account_currency",
     "account_name", "entity_type", "transfer_method"
   ]);
@@ -84,7 +86,7 @@ export function renderGuideBankFields(schema, container) {
     if (typeof key !== "string" || !key) {
       throw new Error("BANK_SCHEMA_FIELD_INVALID");
     }
-    if (existing.has(key) || key === "nickname") continue;
+    if (existing.has(key) || key === "nickname" || key.split(".").pop() === "bank_name") continue;
 
     const pattern = field.rule?.pattern;
     const enumPattern = typeof pattern === "string" &&
@@ -140,7 +142,28 @@ export function renderGuideBankFields(schema, container) {
       continue;
     }
     const label = document.createElement("label");
-    label.textContent = friendlyLabel(field);
+    label.textContent = window.guideBankLanguage === "en"
+  ? ({
+      account_number: "Bank account number",
+      account_name: "Account holder full name",
+      bank_name: "Bank name",
+      bank_code: "Bank code",
+      branch_code: "Branch code",
+      iban: "IBAN",
+      swift_code: "SWIFT / BIC code",
+      bic: "BIC code",
+      routing_number: "Routing number",
+      sort_code: "Sort code",
+      clabe: "CLABE",
+      cbu: "CBU",
+      personal_id_number: "Identification or tax number",
+      personal_email: "Email address",
+      street_address: "Street address",
+      city: "City",
+      postcode: "Postal code",
+      personal_id_type: "Identification type"
+    }[key.split(".").pop()] || friendlyLabel(field))
+  : friendlyLabel(field);
 
     let control;
     if (choices?.length) {

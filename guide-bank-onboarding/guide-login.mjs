@@ -8,10 +8,10 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   button.disabled = true;
-  message.textContent = "Verificando acceso...";
+  message.textContent = window.guideBankLanguage === "en" ? "Verifying access..." : "Verificando acceso...";
 
   try {
-    const response = await fetch("/api/auth/login", {
+    const response = await fetch("https://api.i-guide-u.com/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "omit",
@@ -29,17 +29,19 @@ form.addEventListener("submit", async (event) => {
     }
 
     const status = await loadAuthenticatedGuide(data.token);
+const en = window.guideBankLanguage === "en";
 
     form.reset();
     form.hidden = true;
 
     message.textContent =
       status === "LINKED"
-        ? "Tu cuenta bancaria ya está vinculada."
+        ? (en ? "Your bank account is already linked." : "Tu cuenta bancaria ya está vinculada.")
         : status === "NOT_LINKED"
-          ? "Completá tus datos bancarios para continuar."
-          : status === "REVIEW_REQUIRED" ? "Tu registro bancario requiere revisión manual. No vuelvas a cargar tus datos hasta que se resuelva." : "No pudimos verificar tu perfil bancario.";
-
+        ? (en ? "Enter your bank details to continue." : "Completá tus datos bancarios para continuar.")
+        : status === "REVIEW_REQUIRED"
+        ? (en ? "Your bank registration requires manual review. Do not submit it again." : "Tu registro bancario requiere revisión manual. No vuelvas a cargar los datos.")
+        : (en ? "We could not verify your bank profile." : "No pudimos verificar tu perfil bancario.");
   } catch {
     message.textContent =
       "No se pudo verificar el acceso o el perfil del guía.";

@@ -11,7 +11,7 @@ export function getAuthenticatedGuideToken() {
 export async function loadAuthenticatedGuide(token) {
   activeGuideToken = null;
 
-  const response = await fetch("/api/guides/me/bank-status", {
+  const response = await fetch("https://api.i-guide-u.com/api/guides/me/bank-status", {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`
@@ -39,6 +39,33 @@ export async function loadAuthenticatedGuide(token) {
   if (!linkedBank || !bankDetails) {
     throw new Error("BANK_UI_NOT_FOUND");
   }
+
+  const profileResponse = await fetch("https://api.i-guide-u.com/api/auth/me", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    credentials: "omit",
+    cache: "no-store"
+  });
+
+  if (!profileResponse.ok) {
+    throw new Error("GUIDE_PROFILE_REQUEST_FAILED");
+  }
+
+  const profileData = await profileResponse.json();
+  const profile = profileData.user || profileData;
+
+  const selectedLanguage = String(profile.language || "")
+    .trim()
+    .toLowerCase();
+
+  window.guideBankLanguage =
+    selectedLanguage.startsWith("en") ? "en" : "es";
+
+  document.documentElement.lang = window.guideBankLanguage;
+
+  window.dispatchEvent(new CustomEvent("guide-language-change", {
+    detail: { language: window.guideBankLanguage }
+  }));
 
   activeGuideToken = token;
 

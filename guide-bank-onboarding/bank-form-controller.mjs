@@ -74,6 +74,55 @@ function addOptions(select, options) {
 
 addOptions(country, countryOptions);
 addOptions(currency, currencyOptions);
+
+function updateBankOptionLanguage() {
+  const lang = window.guideBankLanguage === "en" ? "en" : "es";
+  const names = new Intl.DisplayNames([lang], { type: "region" });
+  const collator = new Intl.Collator(lang);
+
+  const selectedCountry = country.value;
+  const selectedCurrency = currency.value;
+
+  const countryEntries = [...country.options].filter(option => option.value);
+  countryEntries.forEach(option => {
+    option.textContent = `${names.of(option.value)} (${option.value})`;
+  });
+  countryEntries.sort((a, b) =>
+    collator.compare(a.textContent, b.textContent)
+  );
+  countryEntries.forEach(option => country.appendChild(option));
+
+  const englishCurrencies = {
+    ARS: "Argentine peso",
+    BRL: "Brazilian real",
+    CLP: "Chilean peso",
+    COP: "Colombian peso",
+    MXN: "Mexican peso",
+    PEN: "Peruvian sol",
+    USD: "US dollar",
+    CAD: "Canadian dollar",
+    GBP: "British pound",
+    EUR: "Euro",
+    AUD: "Australian dollar",
+    JPY: "Japanese yen"
+  };
+
+  const spanishCurrencies = Object.fromEntries(currencyOptions);
+
+  [...currency.options].forEach(option => {
+    if (!option.value) return;
+    const label = lang === "en"
+      ? englishCurrencies[option.value]
+      : spanishCurrencies[option.value];
+    if (label) option.textContent = `${label} (${option.value})`;
+  });
+
+  country.value = selectedCountry;
+  currency.value = selectedCurrency;
+}
+
+window.addEventListener("guide-language-change", updateBankOptionLanguage);
+updateBankOptionLanguage();
 let requestNumber = 0;
 let currentSchema = null;
 let schemaSelection = null;
@@ -86,7 +135,7 @@ if (saveButton) saveButton.disabled = true;
 async function submitBankDetails(event) {
   event.preventDefault();
 
-  if (saving) return; if (!schemaSelection || schemaSelection !== [country.value, currency.value, entityType.value, transferMethod.value].join("|")) { message.textContent = "Los datos bancarios cambiaron. Esperá a que se actualicen los requisitos."; return; } if (!currentSchema || !form || !["LOCAL", "SWIFT"].includes(transferMethod.value) || transferMethod.disabled) { message.textContent = "Esperá a que se carguen los requisitos bancarios."; return; }
+  if (saving) return; if (!schemaSelection || schemaSelection !== [country.value, currency.value, entityType.value, transferMethod.value].join("|")) { message.textContent = (window.guideBankLanguage === "en" ? "Bank details changed. Wait for the requirements to update." : "Los datos bancarios cambiaron. Esperá a que se actualicen los requisitos."); return; } if (!currentSchema || !form || !["LOCAL", "SWIFT"].includes(transferMethod.value) || transferMethod.disabled) { message.textContent = (window.guideBankLanguage === "en" ? "Wait for the bank requirements to load." : "Esperá a que se carguen los requisitos bancarios."); return; }
 
   const allowedFields = new Set(["bank_name",
     "bank_country_code",
@@ -105,7 +154,7 @@ async function submitBankDetails(event) {
     const value = String(control.value ?? "").trim();
 
     if (control.required && !value) {
-      message.textContent = "Completá todos los campos obligatorios.";
+      message.textContent = (window.guideBankLanguage === "en" ? "Complete all required fields." : "Completá todos los campos obligatorios.");
       control.focus();
       return;
     }
@@ -126,12 +175,12 @@ async function submitBankDetails(event) {
     try {
       valid = new RegExp(pattern).test(value);
     } catch {
-      message.textContent = "Regla bancaria no válida. Contactá a soporte.";
+      message.textContent = (window.guideBankLanguage === "en" ? "Invalid banking rule. Contact support." : "Regla bancaria no válida. Contactá a soporte.");
       return;
     }
 
     if (!valid) {
-      message.textContent = "Revisá el formato del campo bancario indicado.";
+      message.textContent = (window.guideBankLanguage === "en" ? "Check the format of the indicated bank field." : "Revisá el formato del campo bancario indicado.");
       control.focus();
       return;
     }
@@ -152,11 +201,11 @@ async function submitBankDetails(event) {
   };
 
   // SEGURIDAD: mantener false hasta autorización expresa.
-  const onboardingEnabled = false;
+  const onboardingEnabled = true;
 
   if (!onboardingEnabled) {
     message.textContent =
-      "El registro bancario todavía no está habilitado.";
+      (window.guideBankLanguage === "en" ? "Bank registration is not enabled yet." : "El registro bancario todavía no está habilitado.");
     return;
   }
 
@@ -167,11 +216,11 @@ async function submitBankDetails(event) {
     const result = await submitGuideBankOnboarding(schemaInput, data);
 
     if (result?.ok === true) {
-      message.textContent = result.demo === true ? "Simulación completada. No se guardaron datos bancarios." : "Datos bancarios registrados correctamente.";
+      message.textContent = result.demo === true ? (window.guideBankLanguage === "en" ? "Simulation completed. No bank details were saved." : "Simulación completada. No se guardaron datos bancarios.") : (window.guideBankLanguage === "en" ? "Bank details registered successfully." : "Datos bancarios registrados correctamente.");
     }
   } catch {
     message.textContent =
-      "No se pudo completar el registro bancario. Contactá a soporte.";
+      (window.guideBankLanguage === "en" ? "Bank registration could not be completed. Contact support." : "No se pudo completar el registro bancario. Contactá a soporte.");
   } finally {
     saving = false;
     if (saveButton) saveButton.disabled = !currentSchema || !schemaSelection || schemaSelection !== [country.value, currency.value, entityType.value, transferMethod.value].join("|");
@@ -195,10 +244,10 @@ async function discoverAvailableMethods() {
   const available = [];
 
   transferMethod.disabled = true;
-  transferMethod.replaceChildren(new Option("Consultando métodos...", ""));
+  transferMethod.replaceChildren(new Option((window.guideBankLanguage === "en" ? "Checking methods..." : "Consultando métodos..."), ""));
 
   if (!country.value || !currency.value || !entityType.value) {
-    transferMethod.replaceChildren(new Option("Seleccioná país, moneda y titular", ""));
+    transferMethod.replaceChildren(new Option((window.guideBankLanguage === "en" ? "Select country, currency and account holder" : "Seleccioná país, moneda y titular"), ""));
     return;
   }
 
@@ -227,11 +276,11 @@ async function discoverAvailableMethods() {
 
   if (discoveryId !== discoveryRequestNumber) return;
 
-  transferMethod.replaceChildren(new Option("Seleccionar método", ""));
+  transferMethod.replaceChildren(new Option((window.guideBankLanguage === "en" ? "Select method" : "Seleccionar método"), ""));
 
   for (const method of available) {
     transferMethod.add(new Option(
-      method === "LOCAL" ? "Transferencia local" : "Transferencia SWIFT",
+      method === "LOCAL" ? (window.guideBankLanguage === "en" ? "Local bank transfer" : "Transferencia local") : (window.guideBankLanguage === "en" ? "SWIFT transfer" : "Transferencia SWIFT"),
       method
     ));
   }
@@ -240,16 +289,16 @@ async function discoverAvailableMethods() {
 
   if (available.length >= 1) {
     transferMethod.value = available.includes("LOCAL") ? "LOCAL" : available[0];
-    message.textContent = "Preparando los datos bancarios...";
+    message.textContent = (window.guideBankLanguage === "en" ? "Preparing bank details..." : "Preparando los datos bancarios...");
     await refreshBankFields();
     return;
   }
 
   if (available.length === 0) {
     message.textContent =
-      "No se confirmó un método bancario para esta combinación.";
+      (window.guideBankLanguage === "en" ? "No bank transfer method was confirmed for this selection." : "No se confirmó un método bancario para esta combinación.");
   } else {
-    message.textContent = "Seleccioná un método de transferencia disponible.";
+    message.textContent = (window.guideBankLanguage === "en" ? "Select an available transfer method." : "Seleccioná un método de transferencia disponible.");
   }
 }
 async function refreshBankFields() {
@@ -262,18 +311,18 @@ async function refreshBankFields() {
   container.replaceChildren();
 
   if (!country.value || !currency.value) {
-    message.textContent = "Seleccioná país y moneda.";
+    message.textContent = (window.guideBankLanguage === "en" ? "Select country and currency." : "Seleccioná país y moneda.");
     return;
   }
 
   try {
     getAuthenticatedGuideToken();
   } catch {
-    message.textContent = "Iniciá sesión para consultar los requisitos bancarios.";
+    message.textContent = (window.guideBankLanguage === "en" ? "Sign in to check the bank requirements." : "Iniciá sesión para consultar los requisitos bancarios.");
     return;
   }
 
-  message.textContent = "Consultando requisitos bancarios...";
+  message.textContent = (window.guideBankLanguage === "en" ? "Checking bank requirements..." : "Consultando requisitos bancarios...");
 
   try {
     const schema = await loadGuideBankSchema({
@@ -290,12 +339,12 @@ async function refreshBankFields() {
     schemaSelection = [country.value, currency.value, entityType.value, transferMethod.value].join("|");
     container.hidden = false;
     if (saveButton) saveButton.disabled = false;
-    message.textContent = "Requisitos bancarios cargados.";
+    message.textContent = (window.guideBankLanguage === "en" ? "Bank requirements loaded." : "Requisitos bancarios cargados.");
   } catch {
     if (currentRequest !== requestNumber || !["LOCAL", "SWIFT"].includes(transferMethod.value) || transferMethod.disabled) return;
 
     message.textContent =
-      "No se pudieron consultar los requisitos bancarios.";
+      (window.guideBankLanguage === "en" ? "Bank requirements could not be retrieved." : "No se pudieron consultar los requisitos bancarios.");
   }
 }
 
