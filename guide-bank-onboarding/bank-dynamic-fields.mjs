@@ -75,6 +75,21 @@ export function renderGuideBankFields(schema, container) {
   bankInput.required = true;
   bankLabel.appendChild(bankInput);
   fragment.appendChild(bankLabel);
+
+  // Tipo de cuenta: selector visual, no se envia a Airwallex.
+  const accountTypeLabel = document.createElement("label");
+  accountTypeLabel.textContent = window.guideBankLanguage === "en"
+    ? "Account type"
+    : "Tipo de cuenta";
+
+  const accountTypeSelect = document.createElement("select");
+  accountTypeSelect.name = "iguideu_account_type";
+  const accountTypeEnglish = window.guideBankLanguage === "en";
+  accountTypeSelect.appendChild(new Option(accountTypeEnglish ? "Select" : "Seleccionar", ""));
+  accountTypeSelect.appendChild(new Option(accountTypeEnglish ? "Savings account" : "Caja de ahorro", "SAVINGS"));
+  accountTypeSelect.appendChild(new Option(accountTypeEnglish ? "Checking account" : "Cuenta corriente", "CHECKING"));
+  accountTypeLabel.appendChild(accountTypeSelect);
+  fragment.appendChild(accountTypeLabel);
   const existing = new Set([
     "bank_name",
     "bank_country_code", "account_currency",
@@ -142,7 +157,16 @@ export function renderGuideBankFields(schema, container) {
       continue;
     }
     const label = document.createElement("label");
-    label.textContent = window.guideBankLanguage === "en"
+    const selectedCountry = document.getElementById("bank_country_code")?.value;
+    const fieldName = key.split(".").pop();
+    const lang = window.guideBankLanguage === "en" ? "en" : "es";
+    const bankIdentifierLabel =
+      selectedCountry === "AR" && (fieldName === "account_number" || fieldName === "cbu")
+        ? (lang === "en" ? "CBU (22 digits)" : "CBU (22 dígitos)")
+        : selectedCountry === "MX" && (fieldName === "account_number" || fieldName === "clabe")
+          ? (lang === "en" ? "CLABE (18 digits)" : "CLABE (18 dígitos)")
+          : null;
+    label.textContent = bankIdentifierLabel || (window.guideBankLanguage === "en"
   ? ({
       account_number: "Bank account number",
       account_name: "Account holder full name",
@@ -163,7 +187,7 @@ export function renderGuideBankFields(schema, container) {
       postcode: "Postal code",
       personal_id_type: "Identification type"
     }[key.split(".").pop()] || friendlyLabel(field))
-  : friendlyLabel(field);
+  : friendlyLabel(field));
 
     let control;
     if (choices?.length) {

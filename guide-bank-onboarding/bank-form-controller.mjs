@@ -218,9 +218,15 @@ async function submitBankDetails(event) {
     if (result?.ok === true) {
       message.textContent = result.demo === true ? (window.guideBankLanguage === "en" ? "Simulation completed. No bank details were saved." : "Simulación completada. No se guardaron datos bancarios.") : (window.guideBankLanguage === "en" ? "Bank details registered successfully." : "Datos bancarios registrados correctamente.");
     }
-  } catch {
-    message.textContent =
-      (window.guideBankLanguage === "en" ? "Bank registration could not be completed. Contact support." : "No se pudo completar el registro bancario. Contactá a soporte.");
+  } catch (error) {
+    const duplicate = error?.code === "BANK_ACCOUNT_ALREADY_REGISTERED";
+    message.textContent = duplicate
+      ? (window.guideBankLanguage === "en"
+          ? "This bank account is already registered by another guide."
+          : "Esta cuenta bancaria ya está registrada por otro guía.")
+      : (window.guideBankLanguage === "en"
+          ? "Bank registration could not be completed. Contact support."
+          : "No se pudo completar el registro bancario. Contactá a soporte.");
   } finally {
     saving = false;
     if (saveButton) saveButton.disabled = !currentSchema || !schemaSelection || schemaSelection !== [country.value, currency.value, entityType.value, transferMethod.value].join("|");
