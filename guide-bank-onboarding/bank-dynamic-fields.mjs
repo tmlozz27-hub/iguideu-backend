@@ -1,4 +1,10 @@
 const LABELS = {
+  first_name: "Nombre",
+  last_name: "Apellido",
+  date_of_birth: "Fecha de nacimiento",
+  account_routing_type1: "Tipo de identificador bancario 1",
+  account_routing_value1: "Valor del identificador bancario 1",
+  state: "Estado o provincia",
   account_number: "Número de cuenta bancaria",
   account_name: "Nombre y apellido del titular",
   bank_name: "Nombre del banco",
@@ -225,9 +231,7 @@ export function renderGuideBankFields(schema, container) {
       const lang = window.guideBankLanguage === "en" ? "en" : "es";
       const labels = {
         AR: ["CBU (22 dígitos)", "CBU (22 digits)"],
-        MX: ["CLABE (18 dígitos)", "CLABE (18 digits)"],
-        US: ["Routing number", "Routing number"],
-        GB: ["Sort code", "Sort code"]
+        MX: ["CLABE (18 dígitos)", "CLABE (18 digits)"]
       };
       const identifier = labels[country];
 
