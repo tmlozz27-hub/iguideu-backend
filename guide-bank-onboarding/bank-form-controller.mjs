@@ -214,7 +214,7 @@ async function submitBankDetails(event) {
 
   try {
     const accountType = container.querySelector('[name="iguideu_account_type"]')?.value;
-    if (!["SAVINGS", "CHECKING"].includes(accountType)) {
+    if (accountType && !["SAVINGS", "CHECKING"].includes(accountType)) {
       throw new Error("BANK_ACCOUNT_TYPE_REQUIRED");
     }
     schemaInput.accountType = accountType;

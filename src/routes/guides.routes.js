@@ -403,7 +403,7 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => { if (r
 
     if (
       !schemaInput ||
-      !["SAVINGS", "CHECKING"].includes(schemaInput.accountType)
+      (schemaInput.accountType && !["SAVINGS", "CHECKING"].includes(schemaInput.accountType))
     ) {
       return res.status(400).json({
         ok: false,
