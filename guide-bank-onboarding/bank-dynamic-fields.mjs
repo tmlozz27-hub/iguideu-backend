@@ -219,6 +219,26 @@ export function renderGuideBankFields(schema, container) {
     control.required = field.required === true;
     label.appendChild(control);
     fragment.appendChild(label);
+
+    if (fieldName === "account_number") {
+      const country = document.getElementById("bank_country_code")?.value;
+      const lang = window.guideBankLanguage === "en" ? "en" : "es";
+      const labels = {
+        AR: ["CBU (22 dígitos)", "CBU (22 digits)"],
+        MX: ["CLABE (18 dígitos)", "CLABE (18 digits)"],
+        US: ["Routing number", "Routing number"],
+        GB: ["Sort code", "Sort code"]
+      };
+      const identifier = labels[country];
+
+      if (identifier) {
+        const note = document.createElement("small");
+        note.textContent = lang === "en" ? identifier[1] : identifier[0];
+        note.style.display = "block";
+        note.style.marginTop = "6px";
+        fragment.appendChild(note);
+      }
+    }
   }
 
     container.replaceChildren(fragment);
