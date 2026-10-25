@@ -194,7 +194,7 @@ export function renderGuideBankFields(schema, container) {
     let control;
     if (choices?.length) {
       control = document.createElement("select");
-      control.appendChild(new Option("Seleccionar", ""));
+      control.appendChild(new Option(window.guideBankLanguage === "en" ? "Select" : "Seleccionar", ""));
 
       for (const choice of choices) {
         const value = typeof choice === "string" ?
