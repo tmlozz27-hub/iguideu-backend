@@ -44,6 +44,9 @@ export async function linkAirwallexBeneficiaryToGuide(
         "airwallex.bankCountryCode": schemaInput.bankCountryCode,
         "airwallex.accountCurrency": schemaInput.accountCurrency,
         "airwallex.transferMethod": schemaInput.transferMethod,
+          ...(schemaInput.accountType
+            ? { "airwallex.accountType": schemaInput.accountType }
+            : {}),
         updatedAt: now
       },
       $unset: {

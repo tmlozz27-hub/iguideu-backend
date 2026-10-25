@@ -67,14 +67,33 @@ export function renderGuideBankFields(schema, container) {
   const fragment = document.createDocumentFragment();
 
   const bankLabel = document.createElement("label");
-  bankLabel.textContent = "Nombre del banco";
+  bankLabel.textContent = window.guideBankLanguage === "en" ? "Bank name" : "Nombre del banco";
   const bankInput = document.createElement("input");
   bankInput.type = "text";
   bankInput.name = "bank_name";
   bankInput.autocomplete = "organization";
+  bankInput.required = true;
   bankLabel.appendChild(bankInput);
   fragment.appendChild(bankLabel);
+
+  // Tipo de cuenta: selector visual, no se envia a Airwallex.
+  const accountTypeLabel = document.createElement("label");
+  accountTypeLabel.textContent = window.guideBankLanguage === "en"
+    ? "Account type"
+    : "Tipo de cuenta";
+
+  const accountTypeSelect = document.createElement("select");
+  accountTypeSelect.name = "iguideu_account_type";
+  accountTypeSelect.disabled = false;
+
+  const accountTypeEnglish = window.guideBankLanguage === "en";
+  accountTypeSelect.appendChild(new Option(accountTypeEnglish ? "Select" : "Seleccionar", ""));
+  accountTypeSelect.appendChild(new Option(accountTypeEnglish ? "Savings account" : "Caja de ahorro", "SAVINGS"));
+  accountTypeSelect.appendChild(new Option(accountTypeEnglish ? "Checking account" : "Cuenta corriente", "CHECKING"));
+  accountTypeLabel.appendChild(accountTypeSelect);
+  fragment.appendChild(accountTypeLabel);
   const existing = new Set([
+    "bank_name",
     "bank_country_code", "account_currency",
     "account_name", "entity_type", "transfer_method"
   ]);
@@ -84,7 +103,7 @@ export function renderGuideBankFields(schema, container) {
     if (typeof key !== "string" || !key) {
       throw new Error("BANK_SCHEMA_FIELD_INVALID");
     }
-    if (existing.has(key) || key === "nickname") continue;
+    if (existing.has(key) || key === "nickname" || key.split(".").pop() === "bank_name") continue;
 
     const pattern = field.rule?.pattern;
     const enumPattern = typeof pattern === "string" &&
@@ -140,12 +159,42 @@ export function renderGuideBankFields(schema, container) {
       continue;
     }
     const label = document.createElement("label");
-    label.textContent = friendlyLabel(field);
+    const selectedCountry = document.getElementById("bank_country_code")?.value;
+    const fieldName = key.split(".").pop();
+    const lang = window.guideBankLanguage === "en" ? "en" : "es";
+    const bankIdentifierLabel =
+      selectedCountry === "AR" && fieldName === "cbu"
+        ? (lang === "en" ? "CBU (22 digits)" : "CBU (22 dígitos)")
+        : selectedCountry === "MX" && fieldName === "clabe"
+          ? (lang === "en" ? "CLABE (18 digits)" : "CLABE (18 dígitos)")
+          : null;
+    label.textContent = bankIdentifierLabel || (window.guideBankLanguage === "en"
+  ? ({
+      account_number: "Bank account number",
+      account_name: "Account holder full name",
+      bank_name: "Bank name",
+      bank_code: "Bank code",
+      branch_code: "Branch code",
+      iban: "IBAN",
+      swift_code: "SWIFT / BIC code",
+      bic: "BIC code",
+      routing_number: "Routing number",
+      sort_code: "Sort code",
+      clabe: "CLABE",
+      cbu: "CBU",
+      personal_id_number: "Identification or tax number",
+      personal_email: "Email address",
+      street_address: "Street address",
+      city: "City",
+      postcode: "Postal code",
+      personal_id_type: "Identification type"
+    }[key.split(".").pop()] || friendlyLabel(field))
+  : friendlyLabel(field));
 
     let control;
     if (choices?.length) {
       control = document.createElement("select");
-      control.appendChild(new Option("Seleccionar", ""));
+      control.appendChild(new Option(window.guideBankLanguage === "en" ? "Select" : "Seleccionar", ""));
 
       for (const choice of choices) {
         const value = typeof choice === "string" ?
@@ -172,5 +221,5 @@ export function renderGuideBankFields(schema, container) {
     fragment.appendChild(label);
   }
 
-  container.replaceChildren(fragment);
+    container.replaceChildren(fragment);
 }

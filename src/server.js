@@ -132,7 +132,8 @@ const publicBankFiles = new Set([
   "guide-session.mjs",
   "bank-form-controller.mjs",
   "bank-schema.mjs",
-  "bank-dynamic-fields.mjs"
+  "bank-dynamic-fields.mjs",
+  "bank-language.mjs"
 ])
 
 app.get("/guia/datos-bancarios/:file", (req, res) => {
