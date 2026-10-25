@@ -403,6 +403,17 @@ router.post("/me/airwallex/onboarding", requireAuth, async (req, res) => { if (r
 
     if (
       !schemaInput ||
+      !["SAVINGS", "CHECKING"].includes(schemaInput.accountType)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: "BANK_ACCOUNT_TYPE_INVALID"
+      });
+    }
+
+
+    if (
+      !schemaInput ||
       typeof schemaInput !== "object" ||
       !beneficiary ||
       typeof beneficiary !== "object"

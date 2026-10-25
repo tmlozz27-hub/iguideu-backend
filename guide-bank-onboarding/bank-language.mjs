@@ -162,9 +162,9 @@ function applyLanguage() {
     const key = control.name.split(".").pop();
     const country = document.getElementById("bank_country_code")?.value;
     const identifier =
-      country === "AR" && ["account_number", "cbu"].includes(key)
+      country === "AR" && key === "cbu"
         ? ["CBU (22 dígitos)", "CBU (22 digits)"]
-        : country === "MX" && ["account_number", "clabe"].includes(key)
+        : country === "MX" && key === "clabe"
           ? ["CLABE (18 dígitos)", "CLABE (18 digits)"]
           : null;
     const names = identifier || fields[key];

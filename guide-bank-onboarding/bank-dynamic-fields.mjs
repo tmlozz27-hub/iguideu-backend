@@ -84,6 +84,8 @@ export function renderGuideBankFields(schema, container) {
 
   const accountTypeSelect = document.createElement("select");
   accountTypeSelect.name = "iguideu_account_type";
+  accountTypeSelect.disabled = false;
+
   const accountTypeEnglish = window.guideBankLanguage === "en";
   accountTypeSelect.appendChild(new Option(accountTypeEnglish ? "Select" : "Seleccionar", ""));
   accountTypeSelect.appendChild(new Option(accountTypeEnglish ? "Savings account" : "Caja de ahorro", "SAVINGS"));
@@ -161,9 +163,9 @@ export function renderGuideBankFields(schema, container) {
     const fieldName = key.split(".").pop();
     const lang = window.guideBankLanguage === "en" ? "en" : "es";
     const bankIdentifierLabel =
-      selectedCountry === "AR" && (fieldName === "account_number" || fieldName === "cbu")
+      selectedCountry === "AR" && fieldName === "cbu"
         ? (lang === "en" ? "CBU (22 digits)" : "CBU (22 dígitos)")
-        : selectedCountry === "MX" && (fieldName === "account_number" || fieldName === "clabe")
+        : selectedCountry === "MX" && fieldName === "clabe"
           ? (lang === "en" ? "CLABE (18 digits)" : "CLABE (18 dígitos)")
           : null;
     label.textContent = bankIdentifierLabel || (window.guideBankLanguage === "en"
@@ -219,5 +221,5 @@ export function renderGuideBankFields(schema, container) {
     fragment.appendChild(label);
   }
 
-  container.replaceChildren(fragment);
+    container.replaceChildren(fragment);
 }
