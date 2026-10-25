@@ -170,7 +170,7 @@ export function renderGuideBankFields(schema, container) {
           : null;
     label.textContent = bankIdentifierLabel || (window.guideBankLanguage === "en"
   ? ({
-      account_number: "Bank account number",
+      account_number: selectedCountry === "AR" ? "CBU (22 digits)" : selectedCountry === "MX" ? "CLABE (18 digits)" : "Bank account number",
       account_name: "Account holder full name",
       bank_name: "Bank name",
       bank_code: "Bank code",
@@ -189,7 +189,7 @@ export function renderGuideBankFields(schema, container) {
       postcode: "Postal code",
       personal_id_type: "Identification type"
     }[key.split(".").pop()] || friendlyLabel(field))
-  : friendlyLabel(field));
+  : (fieldName === "account_number" && selectedCountry === "AR" ? "CBU (22 dígitos)" : fieldName === "account_number" && selectedCountry === "MX" ? "CLABE (18 dígitos)" : friendlyLabel(field)));
 
     let control;
     if (choices?.length) {
