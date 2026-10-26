@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import { buildGuidePayoutBatch } from "./guide-payout-batch.js";
 import { validateNoDuplicateAirwallexPayout } from "./duplicate-guard.js";
 
@@ -22,58 +22,45 @@ export async function claimAirwallexGuideBatch(
   const batchId = randomUUID();
   const requestId = randomUUID();
   const now = new Date();
+  const session = await Booking.startSession();
 
-  const bookingIds = batch.bookingIds;
+  try {
+    await session.withTransaction(async () => {
+      const result = await Booking.updateMany(
+        {
+          _id: { $in: batch.bookingIds },
+          guideId: String(guideId),
+          status: "COMPLETED",
+          guidePayoutStatus: "READY",
+          guidePayoutEligibleAt: { $lte: now },
+          stripePaymentIntentId: { $exists: true, $nin: ["", null] },
+          stripeTransferId: { $in: ["", null] },
+          airwallexTransferId: { $in: ["", null] },
+          airwallexBatchId: { $in: ["", null] },
+          $or: [
+            { airwallexPayoutStatus: "NOT_STARTED" },
+            { airwallexPayoutStatus: { $exists: false } }
+          ]
+        },
+        {
+          $set: {
+            airwallexBatchId: batchId,
+            airwallexRequestId: requestId,
+            airwallexBeneficiaryId: beneficiaryId,
+            airwallexPayoutStatus: "PROCESSING",
+            airwallexProcessingAt: now,
+            airwallexPayoutError: ""
+          }
+        },
+        { session }
+      );
 
-  const result = await Booking.updateMany(
-    {
-      _id: { $in: bookingIds },
-      guideId: String(guideId),
-      status: "COMPLETED",
-      guidePayoutStatus: "READY",
-      guidePayoutEligibleAt: { $lte: now },
-      stripePaymentIntentId: { $exists: true, $nin: ["", null] },
-      stripeTransferId: { $in: ["", null] },
-      airwallexTransferId: { $in: ["", null] },
-      airwallexBatchId: { $in: ["", null] },
-      $or: [
-        { airwallexPayoutStatus: "NOT_STARTED" },
-        { airwallexPayoutStatus: { $exists: false } }
-      ]
-    },
-    {
-      $set: {
-        airwallexBatchId: batchId,
-        airwallexRequestId: requestId,
-        airwallexBeneficiaryId: beneficiaryId,
-        airwallexPayoutStatus: "PROCESSING",
-        airwallexProcessingAt: now,
-        airwallexPayoutError: ""
+      if (result.modifiedCount !== batch.bookingIds.length) {
+        throw new Error("AIRWALLEX_BATCH_CLAIM_REJECTED");
       }
-    }
-  );
-
-  if (result.modifiedCount !== bookingIds.length) {
-    await Booking.updateMany(
-      {
-        _id: { $in: bookingIds },
-        airwallexBatchId: batchId,
-        airwallexRequestId: requestId,
-        airwallexTransferId: { $in: ["", null] }
-      },
-      {
-        $set: {
-          airwallexBatchId: "",
-          airwallexRequestId: "",
-          airwallexBeneficiaryId: "",
-          airwallexPayoutStatus: "NOT_STARTED",
-          airwallexProcessingAt: null,
-          airwallexPayoutError: ""
-        }
-      }
-    );
-
-    throw new Error("AIRWALLEX_BATCH_CLAIM_REJECTED_ROLLED_BACK");
+    });
+  } finally {
+    await session.endSession();
   }
 
   return {
