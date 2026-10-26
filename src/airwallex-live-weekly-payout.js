@@ -52,7 +52,7 @@ async function prepareEligibleBookings(now) {
     const query = {
       _id: new mongoose.Types.ObjectId(testBookingId),
       status: "PAID",
-      ...(lastId ? { _id: { $gt: lastId } } : {})
+      ...(lastId ? { _id: { $eq: new mongoose.Types.ObjectId(testBookingId), $gt: lastId } } : {})
     };
 
     const bookings = await Booking.find(query)
