@@ -7,7 +7,14 @@ export async function findAirwallexWeeklyPayoutCandidates(Booking, now = new Dat
     throw new Error("AIRWALLEX_VALID_DATE_REQUIRED");
   }
 
+  const testBookingId = process.env.AIRWALLEX_TEST_BOOKING_ID;
+
+  if (testBookingId !== "6ade5bdafbafd02eea2e8889") {
+    throw new Error("AIRWALLEX_TEST_BOOKING_ID_REQUIRED");
+  }
+
   return Booking.find({
+    _id: testBookingId,
     status: "COMPLETED",
     guidePayoutStatus: "READY",
     guidePayoutEligibleAt: { $lte: now },

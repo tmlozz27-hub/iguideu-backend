@@ -1,4 +1,4 @@
-﻿import mongoose from "mongoose";
+import mongoose from "mongoose";
 import { connectMongo } from "./services/mongo.js";
 import Booking from "./models/Booking.js";
 import Guide from "./models/Guide.js";
@@ -39,11 +39,18 @@ function eligible(booking, now) {
 }
 
 async function prepareEligibleBookings(now) {
+  const testBookingId = process.env.AIRWALLEX_TEST_BOOKING_ID;
+
+  if (testBookingId !== "6ade5bdafbafd02eea2e8889") {
+    throw new Error("AIRWALLEX_TEST_BOOKING_ID_REQUIRED");
+  }
+
   let lastId = null;
   let updated = 0;
 
   while (true) {
     const query = {
+      _id: new mongoose.Types.ObjectId(testBookingId),
       status: "PAID",
       ...(lastId ? { _id: { $gt: lastId } } : {})
     };
