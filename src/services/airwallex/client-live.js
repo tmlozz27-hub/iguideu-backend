@@ -119,3 +119,28 @@ export async function createAirwallexLiveTransfer(payload, requestId) {
 
   return transfer;
 }
+
+export async function listAirwallexLiveDeposits() {
+  if (process.env.AIRWALLEX_ENV !== "live") {
+    throw new Error("AIRWALLEX_LIVE_ONLY");
+  }
+
+  const token = await airwallexLiveLogin();
+
+  const response = await fetch(
+    "https://api.airwallex.com/api/v1/deposits",
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`AIRWALLEX_DEPOSITS_QUERY_FAILED_${response.status}`);
+  }
+
+  return response.json();
+}

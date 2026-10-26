@@ -17,6 +17,7 @@ export async function findAirwallexWeeklyPayoutCandidates(Booking, now = new Dat
     _id: testBookingId,
     status: "COMPLETED",
     guidePayoutStatus: "READY",
+    stripeFundingStatus: "RECEIVED",
     guidePayoutEligibleAt: { $lte: now },
     stripePaymentIntentId: { $exists: true, $nin: ["", null] },
     stripeTransferId: { $in: ["", null] },

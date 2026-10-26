@@ -35,6 +35,17 @@ const BookingSchema = new mongoose.Schema(
 
     stripePaymentIntentId: { type: String, default: "", index: true },
     stripeTransferId: { type: String, default: "", index: true },
+    stripeFundingPayoutId: { type: String, default: "", index: true },
+    airwallexDepositId: { type: String, default: "" },
+    stripeFundingStatus: {
+      type: String,
+      default: "NOT_STARTED",
+      enum: ["NOT_STARTED", "PROCESSING", "SENT", "PAID", "RECEIVED", "FAILED", "RECONCILIATION_REQUIRED"]
+    },
+    stripeFundingAmountCents: { type: Number, default: 0 },
+    stripeFundingIdempotencyKey: { type: String, default: "" },
+    stripeFundingRequestedAt: { type: Date, default: null },
+    stripeFundingError: { type: String, default: "" },
     guidePayoutAmountCents: { type: Number, default: 0 },
     guidePayoutAttempt: { type: Number, default: 0 },
     guidePayoutStatus: {
@@ -73,5 +84,6 @@ const BookingSchema = new mongoose.Schema(
   },
   { timestamps: true }
 )
+
 
 export default mongoose.models.Booking || mongoose.model("Booking", BookingSchema)

@@ -1,3 +1,5 @@
+import { inspectStripeFundingReceipt, reconcileAndRecordStripeFundingReceipt } from "./services/airwallex/stripe-funding-reconciliation.js";
+import { executeStripeGuideFunding } from "./services/airwallex/stripe-funding-executor.js";
 import mongoose from "mongoose";
 import { connectMongo } from "./services/mongo.js";
 import Booking from "./models/Booking.js";
@@ -102,16 +104,124 @@ async function main() {
     throw new Error("AIRWALLEX_LIVE_ONLY");
   }
 
-  if (process.env.AIRWALLEX_LIVE_PAYOUTS_ENABLED !== "true") {
+  if (process.env.STRIPE_FUNDING_DRY_RUN !== "true" && process.env.STRIPE_FUNDING_LIVE_ENABLED !== "true" && process.env.AIRWALLEX_LIVE_PAYOUTS_ENABLED !== "true" && process.env.STRIPE_FUNDING_RECONCILE_ONLY !== "true") {
     throw new Error("AIRWALLEX_LIVE_PAYOUTS_DISABLED");
+  }
+
+  if (
+    process.env.STRIPE_FUNDING_LIVE_ENABLED === "true" &&
+    process.env.AIRWALLEX_LIVE_PAYOUTS_ENABLED === "true"
+  ) {
+    throw new Error("STRIPE_AND_AIRWALLEX_CANNOT_RUN_TOGETHER");
   }
 
   await connectMongo();
 
+  if (process.env.STRIPE_FUNDING_RECONCILE_ONLY === "true") {
+    const depositId = process.env.AIRWALLEX_VERIFIED_DEPOSIT_ID || "";
+    const independentlyMatched =
+      process.env.AIRWALLEX_INDEPENDENT_MATCH_CONFIRMED === "true";
+
+    const result = depositId && independentlyMatched
+      ? await reconcileAndRecordStripeFundingReceipt(
+          Booking,
+          process.env.AIRWALLEX_TEST_BOOKING_ID,
+          { depositId, independentlyMatched }
+        )
+      : await inspectStripeFundingReceipt(
+          Booking,
+          process.env.AIRWALLEX_TEST_BOOKING_ID
+        );
+
+    console.log("STRIPE AIRWALLEX RECEIPT", JSON.stringify(result));
+    return;
+  }
+
   const now = new Date();
+  if (process.env.STRIPE_FUNDING_DRY_RUN === "true" && process.env.STRIPE_FUNDING_RECONCILE_ONLY !== "true") {
+    const testBookingId = process.env.AIRWALLEX_TEST_BOOKING_ID;
+    const booking = await Booking.findById(testBookingId).lean();
+
+    if (!booking) {
+      throw new Error("TEST_BOOKING_NOT_FOUND");
+    }
+
+    const amountCents = Number(booking.guidePayoutAmountCents);
+
+    console.log("STRIPE FUNDING PREVIEW", {
+      bookingId: String(booking._id),
+      amountCents,
+      commissionCents: Number(booking.amountCents) - amountCents,
+      eligibleNow: eligible(booking, now),
+      serviceDate: booking.date,
+      serviceHours: booking.hours,
+      paidAt: booking.paidAt,
+      hasStripePaymentIntent: String(booking.stripePaymentIntentId || "").startsWith("pi_"),
+      bookingStatus: booking.status,
+      guidePayoutStatus: booking.guidePayoutStatus,
+      airwallexPayoutStatus: booking.airwallexPayoutStatus,
+      currency: booking.currency,
+      currentTime: now.toISOString(),
+      dryRun: true
+    });
+
+    return;
+  }
+
+  if (
+    process.env.STRIPE_FUNDING_LIVE_ENABLED === "true" &&
+    process.env.AIRWALLEX_LIVE_PAYOUTS_ENABLED !== "true"
+  ) {
+    const bookingId = process.env.AIRWALLEX_TEST_BOOKING_ID;
+    const booking = await Booking.findById(bookingId).lean();
+
+    if (!booking) {
+      throw new Error("TEST_BOOKING_NOT_FOUND");
+    }
+
+    if (!eligible(booking, now) &&
+        !(booking.status === "COMPLETED" &&
+          booking.guidePayoutStatus === "READY" &&
+          booking.guidePayoutEligibleAt &&
+          new Date(booking.guidePayoutEligibleAt) <= now)) {
+      throw new Error("STRIPE_FUNDING_BOOKING_NOT_ELIGIBLE");
+    }
+
+    if (booking.status === "PAID") {
+      await prepareEligibleBookings(now);
+    }
+
+    const ready = await Booking.findById(bookingId).lean();
+
+    if (
+      !ready ||
+      ready.status !== "COMPLETED" ||
+      ready.guidePayoutStatus !== "READY" ||
+      !ready.guidePayoutEligibleAt ||
+      new Date(ready.guidePayoutEligibleAt) > now
+    ) {
+      throw new Error("STRIPE_FUNDING_NOT_READY_AFTER_PREPARATION");
+    }
+
+    await executeStripeGuideFunding(
+      Booking,
+      bookingId,
+      Number(ready.guidePayoutAmountCents),
+      { enabled: true }
+    );
+
+    console.log("STRIPE FUNDING ONLY COMPLETE");
+    return;
+  }
+
   const updated = await prepareEligibleBookings(now);
 
   console.log("AIRWALLEX ELIGIBILITY UPDATED", { updated });
+
+  if (process.env.AIRWALLEX_LIVE_PAYOUTS_ENABLED !== "true" && process.env.STRIPE_FUNDING_RECONCILE_ONLY !== "true") {
+    console.log("AIRWALLEX PAYOUTS DISABLED - FUNDING ONLY");
+    return;
+  }
 
   const results = await runAirwallexLiveWeeklyPayoutCycle(
     Booking, Guide, now
