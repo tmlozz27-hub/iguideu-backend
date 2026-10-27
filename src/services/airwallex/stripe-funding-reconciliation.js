@@ -42,11 +42,26 @@ export async function inspectStripeFundingReceipt(
   }
 
   if (!depositId || independentlyMatched !== true) {
+    const deposits = await listAirwallexLiveDeposits();
+
+    if (!Array.isArray(deposits)) {
+      throw new Error("AIRWALLEX_DEPOSIT_LIST_INCOMPLETE");
+    }
+
+    const candidates = deposits.filter(d =>
+      d.status === "SETTLED" &&
+      d.currency === "USD" &&
+      Number.isFinite(Number(d.amount)) &&
+      Math.round(Number(d.amount) * 100) ===
+        Number(booking.guidePayoutAmountCents)
+    );
+
     return {
       bookingId: String(bookingId),
       stripePayoutId: payoutId,
       airwallexReceiptConfirmed: false,
       readyToMarkReceived: false,
+      candidateDepositIds: candidates.map(d => d.id),
       reason: "INDEPENDENT_BANK_MATCH_REQUIRED"
     };
   }

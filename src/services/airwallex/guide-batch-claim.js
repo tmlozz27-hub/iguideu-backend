@@ -32,6 +32,7 @@ export async function claimAirwallexGuideBatch(
           guideId: String(guideId),
           status: "COMPLETED",
           guidePayoutStatus: "READY",
+          stripeFundingStatus: "RECEIVED",
           guidePayoutEligibleAt: { $lte: now },
           stripePaymentIntentId: { $exists: true, $nin: ["", null] },
           stripeTransferId: { $in: ["", null] },

@@ -7,8 +7,7 @@ export function classifyAirwallexTransfer(transfer) {
 
   switch (status) {
     case "PAID":
-      // Final settlement status must be verified before enabling completion.
-      return "RECONCILIATION_REQUIRED";
+      return "COMPLETED";
 
     case "PROCESSING":
     case "SCHEDULED":

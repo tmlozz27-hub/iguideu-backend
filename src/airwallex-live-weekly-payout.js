@@ -115,12 +115,52 @@ async function main() {
     throw new Error("STRIPE_AND_AIRWALLEX_CANNOT_RUN_TOGETHER");
   }
 
+  if (
+    process.env.STRIPE_FUNDING_DRY_RUN === "true" &&
+    process.env.AIRWALLEX_LIVE_PAYOUTS_ENABLED === "true"
+  ) {
+    throw new Error("DRY_RUN_CANNOT_EXECUTE_LIVE_PAYOUTS");
+  }
+
   await connectMongo();
 
-  if (process.env.STRIPE_FUNDING_RECONCILE_ONLY === "true") {
+  if (process.env.STRIPE_FUNDING_RECONCILE_ONLY === "true" || process.env.STRIPE_FUNDING_DRY_RUN === "true") {
     const depositId = process.env.AIRWALLEX_VERIFIED_DEPOSIT_ID || "";
     const independentlyMatched =
       process.env.AIRWALLEX_INDEPENDENT_MATCH_CONFIRMED === "true";
+
+    const existingBooking = await Booking.findById(
+      process.env.AIRWALLEX_TEST_BOOKING_ID
+    ).lean();
+
+    if (!existingBooking) {
+      throw new Error("TEST_BOOKING_NOT_FOUND");
+    }
+
+    if (existingBooking.stripeFundingStatus === "RECEIVED") {
+      if (process.env.AIRWALLEX_LIVE_PAYOUTS_ENABLED === "true") {
+        const results = await runAirwallexLiveWeeklyPayoutCycle(
+          Booking,
+          Guide,
+          new Date()
+        );
+
+        console.log(
+          "AIRWALLEX AUTO PAYOUT RECOVERY",
+          JSON.stringify({
+            guideCount: results.length,
+            bookingCount: results.reduce(
+              (total, item) => total + item.bookingCount,
+              0
+            )
+          })
+        );
+      } else {
+        console.log("AIRWALLEX RECEIVED - PAYOUTS DISABLED");
+      }
+
+      return;
+    }
 
     const result = depositId && independentlyMatched
       ? await reconcileAndRecordStripeFundingReceipt(
@@ -134,6 +174,31 @@ async function main() {
         );
 
     console.log("STRIPE AIRWALLEX RECEIPT", JSON.stringify(result));
+
+    if (
+      (result.recorded === true ||
+        (await Booking.findById(process.env.AIRWALLEX_TEST_BOOKING_ID).lean())
+          ?.stripeFundingStatus === "RECEIVED") &&
+      process.env.AIRWALLEX_LIVE_PAYOUTS_ENABLED === "true"
+    ) {
+      const results = await runAirwallexLiveWeeklyPayoutCycle(
+        Booking,
+        Guide,
+        new Date()
+      );
+
+      console.log(
+        "AIRWALLEX AUTO PAYOUT AFTER RECEIPT",
+        JSON.stringify({
+          guideCount: results.length,
+          bookingCount: results.reduce(
+            (total, item) => total + item.bookingCount,
+            0
+          )
+        })
+      );
+    }
+
     return;
   }
 
