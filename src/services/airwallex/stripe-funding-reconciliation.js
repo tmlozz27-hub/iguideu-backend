@@ -1,4 +1,4 @@
-import { recordStripeFundingReceipt } from "./stripe-funding-receipt-record.js";
+﻿import { recordStripeFundingReceipt } from "./stripe-funding-receipt-record.js";
 import { retrieveStripeGuideFundingPayout } from "./stripe-funding-live.js";
 import { listAirwallexLiveDeposits } from "./client-live.js";
 import { verifyAirwallexDepositForFunding } from "./verify-bank-deposit.js";
@@ -14,88 +14,81 @@ export async function inspectStripeFundingReceipt(
 
   const booking = await Booking.findById(bookingId).lean();
   if (!booking) throw new Error("BOOKING_NOT_FOUND");
-
   if (booking.stripeFundingStatus !== "SENT") {
     throw new Error("STRIPE_FUNDING_NOT_SENT");
   }
 
   const payoutId = String(booking.stripeFundingPayoutId || "");
-
   if (!/^po_[A-Za-z0-9]+$/.test(payoutId)) {
     throw new Error("STRIPE_PAYOUT_ID_MISSING");
   }
 
   const payout = await retrieveStripeGuideFundingPayout(payoutId);
+  const amountCents = Number(booking.guidePayoutAmountCents);
 
   if (
     payout.id !== payoutId ||
     payout.currency !== "usd" ||
-    payout.amount !== Number(booking.guidePayoutAmountCents) ||
+    payout.amount !== amountCents ||
     payout.status !== "paid"
   ) {
     return {
       bookingId: String(bookingId),
-      stripeStatus: payout.status,
-      airwallexReceiptConfirmed: false,
-      readyToMarkReceived: false
-    };
-  }
-
-  if (!depositId || independentlyMatched !== true) {
-    const deposits = await listAirwallexLiveDeposits();
-
-    if (!Array.isArray(deposits)) {
-      throw new Error("AIRWALLEX_DEPOSIT_LIST_INCOMPLETE");
-    }
-
-    const candidates = deposits.filter(d =>
-      d.status === "SETTLED" &&
-      d.currency === "USD" &&
-      Number.isFinite(Number(d.amount)) &&
-      Math.round(Number(d.amount) * 100) ===
-        Number(booking.guidePayoutAmountCents)
-    );
-
-    return {
-      bookingId: String(bookingId),
-      stripePayoutId: payoutId,
-      airwallexReceiptConfirmed: false,
       readyToMarkReceived: false,
-      candidateDepositIds: candidates.map(d => d.id),
-      reason: "INDEPENDENT_BANK_MATCH_REQUIRED"
+      reason: "STRIPE_PAYOUT_NOT_VERIFIED"
     };
   }
 
   const deposits = await listAirwallexLiveDeposits();
-
   if (!Array.isArray(deposits)) {
     throw new Error("AIRWALLEX_DEPOSIT_LIST_INCOMPLETE");
   }
 
-  const matches = deposits.filter(d => String(d.id) === String(depositId));
+  const candidates = deposits.filter(d =>
+    d.status === "SETTLED" &&
+    d.currency === "USD" &&
+    Math.round(Number(d.amount) * 100) === amountCents &&
+    Boolean(d.settled_at) &&
+    Boolean(d.provider_transaction_id) &&
+    Boolean(d.global_account_id)
+  );
 
-  if (matches.length !== 1) {
-    throw new Error("AIRWALLEX_DEPOSIT_NOT_UNIQUELY_FOUND");
+  const verified = candidates.filter(d => {
+    const reference = String(d.reference || "").toUpperCase();
+    const payer = String(d.payer?.name || "").toUpperCase();
+
+    return (
+      reference.includes(payoutId.toUpperCase()) &&
+      payer.includes("STRIPE")
+    );
+  });
+
+  if (verified.length !== 1) {
+    return {
+      bookingId: String(bookingId),
+      stripePayoutId: payoutId,
+      candidateDepositIds: candidates.map(d => d.id),
+      airwallexReceiptConfirmed: false,
+      readyToMarkReceived: false,
+      reason: "BANK_REFERENCE_NOT_VERIFIED"
+    };
   }
 
+  const deposit = verified[0];
+
   return verifyAirwallexDepositForFunding({
-    deposit: matches[0],
+    deposit,
     stripePayout: payout,
     booking,
-    independentlyMatched
+    independentlyMatched: true
   });
 }
 
 export async function reconcileAndRecordStripeFundingReceipt(
   Booking,
-  bookingId,
-  { depositId = "", independentlyMatched = false } = {}
+  bookingId
 ) {
-  const receipt = await inspectStripeFundingReceipt(
-    Booking,
-    bookingId,
-    { depositId, independentlyMatched }
-  );
+  const receipt = await inspectStripeFundingReceipt(Booking, bookingId);
 
   if (
     receipt.airwallexReceiptConfirmed !== true ||
@@ -108,10 +101,7 @@ export async function reconcileAndRecordStripeFundingReceipt(
     };
   }
 
-  const recorded = await recordStripeFundingReceipt(
-    Booking,
-    receipt
-  );
+  const recorded = await recordStripeFundingReceipt(Booking, receipt);
 
   return {
     ...recorded,

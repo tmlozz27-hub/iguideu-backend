@@ -162,15 +162,10 @@ async function main() {
       return;
     }
 
-    const result = depositId && independentlyMatched
-      ? await reconcileAndRecordStripeFundingReceipt(
+    const result = await reconcileAndRecordStripeFundingReceipt(
           Booking,
           process.env.AIRWALLEX_TEST_BOOKING_ID,
           { depositId, independentlyMatched }
-        )
-      : await inspectStripeFundingReceipt(
-          Booking,
-          process.env.AIRWALLEX_TEST_BOOKING_ID
         );
 
     console.log("STRIPE AIRWALLEX RECEIPT", JSON.stringify(result));
