@@ -104,6 +104,34 @@ export async function createAirwallexLiveTransfer(payload, requestId) {
   );
 
   if (!response.ok) {
+    const rawError = await response.text();
+    let details = {};
+
+    try {
+      const parsed = JSON.parse(rawError);
+      details = {
+        code: parsed.code || null,
+        message: parsed.message || null,
+        errors: Array.isArray(parsed.details?.errors)
+          ? parsed.details.errors.map(e => ({
+              code: e.code || null,
+              source: e.source || null,
+              message: e.message || null
+            }))
+          : []
+      };
+    } catch {
+      details = { code: "UNPARSEABLE_AIRWALLEX_ERROR" };
+    }
+
+    console.error(
+      "AIRWALLEX LIVE TRANSFER REJECTED",
+      JSON.stringify({
+        httpStatus: response.status,
+        ...details
+      })
+    );
+
     throw new Error(
       `AIRWALLEX_LIVE_TRANSFER_CREATE_FAILED_${response.status}`
     );
