@@ -56,13 +56,23 @@ export async function inspectStripeFundingReceipt(
   const stripeTrace = String(payout.trace_id?.value || "").replace(/\D/g, "");
 
   const verified = candidates.filter(d => {
-    const providerTransactionId = String(d.provider_transaction_id || "");
-    const providerTraceIds = providerTransactionId.match(/\d{15}/g) || [];
+    const bankReferences = [
+      d.reference,
+      d.provider_transaction_id,
+      d.bank_reference,
+      d.trace_id,
+      d.ach_trace_id
+    ].filter(v => typeof v === "string");
+
+    const exactTraceMatch = bankReferences.some(value => {
+      const tokens = value.match(/(?<!\d)\d{15}(?!\d)/g) || [];
+      return tokens.includes(stripeTrace);
+    });
 
     return (
       payout.trace_id?.status === "supported" &&
       stripeTrace.length === 15 &&
-      providerTraceIds.includes(stripeTrace)
+      exactTraceMatch
     );
   });
 
