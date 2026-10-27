@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { buildGuidePayoutBatch } from "./guide-payout-batch.js";
 import { validateNoDuplicateAirwallexPayout } from "./duplicate-guard.js";
 
@@ -9,6 +9,7 @@ export async function claimAirwallexGuideBatch(
   beneficiaryId
 ) {
   const batch = buildGuidePayoutBatch(bookings, guideId);
+  if (batch.amountCents < 100) throw new Error("AIRWALLEX_BATCH_BELOW_USD_1_MINIMUM");
 
   if (
     typeof beneficiaryId !== "string" ||
@@ -32,8 +33,8 @@ export async function claimAirwallexGuideBatch(
           guideId: String(guideId),
           status: "COMPLETED",
           guidePayoutStatus: "READY",
-          stripeFundingStatus: "RECEIVED",
-          guidePayoutEligibleAt: { $lte: now },
+            stripeFundingStatus: "RECEIVED",
+            guidePayoutEligibleAt: { $lte: now },
           stripePaymentIntentId: { $exists: true, $nin: ["", null] },
           stripeTransferId: { $in: ["", null] },
           airwallexTransferId: { $in: ["", null] },

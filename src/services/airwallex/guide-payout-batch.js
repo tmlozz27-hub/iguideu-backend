@@ -25,6 +25,9 @@ export function buildGuidePayoutBatch(bookings, guideId) {
     };
   });
 
+  if (new Set(items.map(item => item.bookingId)).size !== items.length) {
+    throw new Error("AIRWALLEX_BATCH_DUPLICATE_BOOKING_IDS");
+  }
   const amountCents = items.reduce(
     (total, item) => total + item.amountCents,
     0

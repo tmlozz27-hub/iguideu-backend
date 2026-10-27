@@ -19,10 +19,6 @@ export async function executeStripeGuideFunding(
     throw new Error("STRIPE_FUNDING_LIVE_DISABLED");
   }
 
-  if (process.env.AIRWALLEX_TEST_BOOKING_ID !== String(bookingId)) {
-    throw new Error("TEST_BOOKING_MISMATCH");
-  }
-
   const funding = await inspectStripeFunding(Booking, bookingId);
 
   if (!funding.canRequestNewPayout) {
@@ -71,10 +67,6 @@ export async function executeStripeGuideFunding(
 }
 
 export async function inspectStripeFunding(Booking, bookingId) {
-  if (process.env.AIRWALLEX_TEST_BOOKING_ID !== String(bookingId)) {
-    throw new Error("TEST_BOOKING_MISMATCH");
-  }
-
   const booking = await Booking.findById(bookingId).lean();
 
   if (!booking) {

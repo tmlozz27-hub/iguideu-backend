@@ -8,10 +8,6 @@ export async function inspectStripeFundingReceipt(
   bookingId,
   { depositId = "", independentlyMatched = false } = {}
 ) {
-  if (process.env.AIRWALLEX_TEST_BOOKING_ID !== String(bookingId)) {
-    throw new Error("TEST_BOOKING_MISMATCH");
-  }
-
   const booking = await Booking.findById(bookingId).lean();
   if (!booking) throw new Error("BOOKING_NOT_FOUND");
   if (booking.stripeFundingStatus !== "SENT") {
