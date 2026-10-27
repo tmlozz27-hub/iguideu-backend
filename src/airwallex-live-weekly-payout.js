@@ -1,3 +1,4 @@
+﻿import { reconcileAirwallexLiveTransfers } from "./services/airwallex/airwallex-live-transfer-reconciliation.js";
 import { inspectStripeFundingReceipt, reconcileAndRecordStripeFundingReceipt } from "./services/airwallex/stripe-funding-reconciliation.js";
 import { executeStripeGuideFunding } from "./services/airwallex/stripe-funding-executor.js";
 import mongoose from "mongoose";
@@ -123,6 +124,9 @@ async function main() {
   }
 
   await connectMongo();
+
+  const transferReconciliation = await reconcileAirwallexLiveTransfers(Booking);
+  console.log("AIRWALLEX TRANSFER RECONCILIATION", JSON.stringify(transferReconciliation));
 
   if (process.env.STRIPE_FUNDING_RECONCILE_ONLY === "true" || process.env.STRIPE_FUNDING_DRY_RUN === "true") {
     const depositId = process.env.AIRWALLEX_VERIFIED_DEPOSIT_ID || "";
@@ -303,3 +307,4 @@ try {
 } finally {
   await mongoose.disconnect();
 }
+
