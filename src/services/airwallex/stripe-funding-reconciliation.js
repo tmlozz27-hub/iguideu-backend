@@ -1,4 +1,4 @@
-﻿import { recordStripeFundingReceipt } from "./stripe-funding-receipt-record.js";
+import { recordStripeFundingReceipt } from "./stripe-funding-receipt-record.js";
 import { retrieveStripeGuideFundingPayout } from "./stripe-funding-live.js";
 import { listAirwallexLiveDeposits } from "./client-live.js";
 import { verifyAirwallexDepositForFunding } from "./verify-bank-deposit.js";
@@ -53,13 +53,16 @@ export async function inspectStripeFundingReceipt(
     Boolean(d.global_account_id)
   );
 
+  const stripeTrace = String(payout.trace_id?.value || "").replace(/\D/g, "");
+
   const verified = candidates.filter(d => {
-    const reference = String(d.reference || "").toUpperCase();
-    const payer = String(d.payer?.name || "").toUpperCase();
+    const providerTransactionId = String(d.provider_transaction_id || "");
+    const providerTraceIds = providerTransactionId.match(/\d{15}/g) || [];
 
     return (
-      reference.includes(payoutId.toUpperCase()) &&
-      payer.includes("STRIPE")
+      payout.trace_id?.status === "supported" &&
+      stripeTrace.length === 15 &&
+      providerTraceIds.includes(stripeTrace)
     );
   });
 
