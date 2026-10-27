@@ -8,10 +8,6 @@ import { assertAirwallexLivePayoutsEnabled } from "./live-payout-guard.js";
 export async function runAirwallexLiveWeeklyPayoutCycle(Booking, Guide, now = new Date()) {
   assertAirwallexLivePayoutsEnabled();
 
-  if (!Guide?.findById) {
-    throw new Error("AIRWALLEX_GUIDE_MODEL_REQUIRED");
-  }
-
   const candidates = await findAirwallexWeeklyPayoutCandidates(Booking, now);
   const groups = groupAirwallexCandidatesByGuide(candidates);
   const results = [];
@@ -29,16 +25,20 @@ export async function runAirwallexLiveWeeklyPayoutCycle(Booking, Guide, now = ne
       continue;
     }
 
-    try {
-      const guide = await Guide.findById(group.guideId);
-      validateAirwallexGuideForPayout(guide, group.guideId);
-      const result = await executeAirwallexLiveGuideBatch(Booking, group.bookings, guide);
-      results.push({ guideId: group.guideId, bookingCount: group.bookings.length, result });
-    } catch (error) {
-      console.error("AIRWALLEX_GUIDE_BATCH_FAILED", group.guideId, error.message);
-      results.push({ guideId: group.guideId, bookingCount: group.bookings.length,
-        status: "REQUIRES_RECONCILIATION_OR_RETRY", error: error.message });
-    }
+    const guide = await Guide.findById(group.guideId);
+    validateAirwallexGuideForPayout(guide, group.guideId);
+
+    const result = await executeAirwallexLiveGuideBatch(
+      Booking,
+      group.bookings,
+      guide
+    );
+
+    results.push({
+      guideId: group.guideId,
+      bookingCount: group.bookings.length,
+      result
+    });
   }
 
   return results;
