@@ -71,6 +71,7 @@ export async function retrieveStripeGuideFundingPayout(payoutId) {
     amount: payout.amount,
     currency: payout.currency,
     status: payout.status,
-    arrivalDate: payout.arrival_date
+    arrivalDate: payout.arrival_date,
+    trace_id: payout.trace_id ?? null
   };
 }
