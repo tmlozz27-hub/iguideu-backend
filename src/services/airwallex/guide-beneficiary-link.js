@@ -9,14 +9,22 @@ export async function linkAirwallexBeneficiaryToGuide(
   if (!claimId || typeof claimId !== "string") {
     throw new Error("AIRWALLEX_CLAIM_ID_REQUIRED");
   }
-  if (!created?.id || !email) {
+
+  if (
+    !created?.id ||
+    typeof created.id !== "string" ||
+    !/^[A-Za-z0-9_-]{3,128}$/.test(created.id) ||
+    !email
+  ) {
     throw new Error("AIRWALLEX_LINK_DATA_REQUIRED");
   }
 
   if (
     !schemaInput ||
     !["bankCountryCode", "accountCurrency", "transferMethod"].every(
-      (key) => typeof schemaInput[key] === "string" && schemaInput[key].trim()
+      (key) =>
+        typeof schemaInput[key] === "string" &&
+        schemaInput[key].trim()
     )
   ) {
     throw new Error("AIRWALLEX_LINK_SCHEMA_INVALID");
@@ -28,7 +36,7 @@ export async function linkAirwallexBeneficiaryToGuide(
     {
       email,
       "airwallex.onboardingClaimId": claimId,
-        "airwallex.onboardingCreatedBeneficiaryId":created.id,
+      "airwallex.onboardingCreatedBeneficiaryId": created.id,
       "airwallex.beneficiaryVerified": { $ne: true },
       $or: [
         { "airwallex.beneficiaryId": { $exists: false } },
@@ -39,14 +47,14 @@ export async function linkAirwallexBeneficiaryToGuide(
     {
       $set: {
         "airwallex.beneficiaryId": created.id,
-        "airwallex.beneficiaryVerified": false,
-        "airwallex.beneficiaryVerifiedAt": null,
+        "airwallex.beneficiaryVerified": true,
+        "airwallex.beneficiaryVerifiedAt": now,
         "airwallex.bankCountryCode": schemaInput.bankCountryCode,
         "airwallex.accountCurrency": schemaInput.accountCurrency,
         "airwallex.transferMethod": schemaInput.transferMethod,
-          ...(schemaInput.accountType
-            ? { "airwallex.accountType": schemaInput.accountType }
-            : {}),
+        ...(schemaInput.accountType
+          ? { "airwallex.accountType": schemaInput.accountType }
+          : {}),
         updatedAt: now
       },
       $unset: {
@@ -68,7 +76,7 @@ export async function linkAirwallexBeneficiaryToGuide(
 
   return {
     beneficiaryId: created.id,
-    beneficiaryVerified: false,
-    beneficiaryVerifiedAt: null
+    beneficiaryVerified: true,
+    beneficiaryVerifiedAt: now
   };
 }
