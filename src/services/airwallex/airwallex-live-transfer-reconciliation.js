@@ -1,5 +1,6 @@
-﻿import { getAirwallexLiveTransfer } from "./client-live.js";
+import { getAirwallexLiveTransfer } from "./client-live.js";
 import { classifyAirwallexTransfer } from "./transfer-status.js";
+import { validateAirwallexTransferIdentity } from "./reconciliation-guard.js";
 
 export async function reconcileAirwallexLiveTransfers(Booking) {
   if (process.env.AIRWALLEX_ENV !== "live") {
@@ -16,7 +17,7 @@ export async function reconcileAirwallexLiveTransfers(Booking) {
       $in: ["PROCESSING", "SENT", "RECONCILIATION_REQUIRED"]
     }
   })
-    .select("_id airwallexTransferId airwallexPayoutStatus")
+    .select("_id airwallexTransferId airwallexRequestId airwallexBeneficiaryId airwallexPayoutStatus")
     .lean();
 
   const groups = new Map();
@@ -25,12 +26,12 @@ export async function reconcileAirwallexLiveTransfers(Booking) {
     const id = String(booking.airwallexTransferId || "");
     if (!id) continue;
     if (!groups.has(id)) groups.set(id, []);
-    groups.get(id).push(booking._id);
+    groups.get(id).push(booking);
   }
 
   const results = [];
 
-  for (const [transferId, ids] of groups) {
+  for (const [transferId, groupBookings] of groups) {
     try {
       const transfer = await getAirwallexLiveTransfer(transferId);
 
@@ -38,7 +39,35 @@ export async function reconcileAirwallexLiveTransfers(Booking) {
         throw new Error("AIRWALLEX_TRANSFER_ID_MISMATCH");
       }
 
+      for (const booking of groupBookings) {
+        validateAirwallexTransferIdentity(booking, transfer);
+      }
+      const expectedRequestId = groupBookings[0].airwallexRequestId;
+      const expectedBeneficiaryId = groupBookings[0].airwallexBeneficiaryId;
+
+      if (
+        !expectedRequestId ||
+        !expectedBeneficiaryId ||
+        groupBookings.some(
+          (booking) =>
+            booking.airwallexRequestId !== expectedRequestId ||
+            booking.airwallexBeneficiaryId !== expectedBeneficiaryId
+        )
+      ) {
+        throw new Error("AIRWALLEX_BATCH_IDENTITY_MISMATCH");
+      }
+
+      const ids = groupBookings.map((booking) => booking._id);
       const status = classifyAirwallexTransfer(transfer);
+
+      if (
+        status === "PROCESSING" &&
+        groupBookings.some(
+          (booking) => booking.airwallexPayoutStatus === "SENT"
+        )
+      ) {
+        throw new Error("AIRWALLEX_TRANSFER_STATUS_REGRESSION");
+      }
 
       const update = {
         airwallexPayoutStatus: status,
@@ -50,12 +79,16 @@ export async function reconcileAirwallexLiveTransfers(Booking) {
 
       if (status === "COMPLETED") {
         update.airwallexCompletedAt = new Date();
+    update.guidePayoutStatus = "TRANSFERRED";
+    update.guidePayoutTransferredAt = update.airwallexCompletedAt;
       }
 
       const result = await Booking.updateMany(
         {
           _id: { $in: ids },
           airwallexTransferId: transferId,
+          airwallexRequestId: groupBookings[0].airwallexRequestId,
+          airwallexBeneficiaryId: groupBookings[0].airwallexBeneficiaryId,
           airwallexPayoutStatus: {
             $in: ["PROCESSING", "SENT", "RECONCILIATION_REQUIRED"]
           }

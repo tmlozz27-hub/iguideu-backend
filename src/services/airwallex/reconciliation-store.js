@@ -1,4 +1,4 @@
-﻿import { prepareAirwallexReconciliation } from "./reconciliation.js";
+import { prepareAirwallexReconciliation } from "./reconciliation.js";
 
 export async function persistAirwallexReconciliation(Booking, booking, transfer) {
   const result = prepareAirwallexReconciliation(booking, transfer);
@@ -11,6 +11,8 @@ export async function persistAirwallexReconciliation(Booking, booking, transfer)
 
   if (result.nextStatus === "COMPLETED") {
     update.$set.airwallexCompletedAt = new Date();
+    update.$set.guidePayoutStatus = "TRANSFERRED";
+    update.$set.guidePayoutTransferredAt = update.$set.airwallexCompletedAt;
   }
 
   const filter = {
@@ -36,11 +38,26 @@ export async function persistAirwallexReconciliation(Booking, booking, transfer)
     throw new Error("AIRWALLEX_RECONCILIATION_CONFLICT");
   }
 
-  const latestResult = prepareAirwallexReconciliation(latest, transfer);
+  const { validateAirwallexTransferIdentity } = await import("./reconciliation-guard.js");
+  const { classifyAirwallexTransfer } = await import("./transfer-status.js");
 
-  // A duplicate is safe only when the desired state is already stored.
-  if (latestResult.currentStatus === latestResult.nextStatus) {
+  validateAirwallexTransferIdentity(latest, transfer);
+
+  if (
+    latest.airwallexPayoutStatus === "COMPLETED" &&
+    latest.guidePayoutStatus === "TRANSFERRED" &&
+    latest.guidePayoutTransferredAt &&
+    classifyAirwallexTransfer(transfer) === "COMPLETED"
+  ) {
     return latest;
+  }
+
+  if (latest.airwallexPayoutStatus !== "COMPLETED") {
+    const latestResult = prepareAirwallexReconciliation(latest, transfer);
+
+    if (latestResult.currentStatus === latestResult.nextStatus) {
+      return latest;
+    }
   }
 
   throw new Error("AIRWALLEX_RECONCILIATION_CONFLICT");
