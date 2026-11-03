@@ -1,4 +1,4 @@
-﻿import mongoose from "mongoose";
+import mongoose from "mongoose";
 import AirwallexFundingReceipt from "../../models/AirwallexFundingReceipt.js";
 
 export async function recordStripeFundingReceipt(Booking, receipt) {
@@ -40,6 +40,8 @@ export async function recordStripeFundingReceipt(Booking, receipt) {
         {
           _id: bookingId,
           status: "COMPLETED",
+      cancellationLock: { $in: ["", null] },
+      cancellationRefundStatus: { $in: ["NOT_STARTED", null] },
           guidePayoutStatus: "READY",
           guidePayoutEligibleAt: { $lte: new Date() },
           stripeFundingStatus: "SENT",

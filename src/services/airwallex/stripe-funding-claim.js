@@ -7,6 +7,8 @@ export async function claimStripeFunding(Booking, bookingId, amountCents) {
     {
       _id: bookingId,
       status: "COMPLETED",
+      cancellationLock: { $in: ["", null] },
+      cancellationRefundStatus: { $in: ["NOT_STARTED", null] },
       guidePayoutStatus: "READY",
       guidePayoutEligibleAt: { $lte: new Date() },
       guidePayoutAmountCents: amountCents,

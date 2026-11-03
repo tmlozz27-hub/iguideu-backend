@@ -1,4 +1,4 @@
-﻿import { claimStripeFunding } from "./stripe-funding-claim.js";
+import { claimStripeFunding } from "./stripe-funding-claim.js";
 
 export async function prepareStripeGuideFunding(
   Booking,
@@ -17,6 +17,8 @@ export async function prepareStripeGuideFunding(
   const booking = await Booking.findOne({
     _id: bookingId,
     status: "COMPLETED",
+      cancellationLock: { $in: ["", null] },
+      cancellationRefundStatus: { $in: ["NOT_STARTED", null] },
     guidePayoutStatus: "READY",
     guidePayoutEligibleAt: { $lte: new Date() },
     guidePayoutAmountCents: amountCents,

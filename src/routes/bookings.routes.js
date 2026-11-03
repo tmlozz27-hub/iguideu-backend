@@ -2,6 +2,10 @@ import express from "express"
 import mongoose from "mongoose"
 import Stripe from "stripe"
 import { requireAuth } from "../middleware/auth.js"
+import { claimBookingCancellation } from "../services/airwallex/cancellation-claim.js"
+import { recordBookingCancellationRefund } from "../services/airwallex/cancellation-refund-record.js"
+import { finalizeBookingCancellation } from "../services/airwallex/cancellation-finalize.js"
+import { finalizeUnpaidBookingCancellation } from "../services/airwallex/cancellation-unpaid-finalize.js"
 
 const router = express.Router()
 const stripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim()
@@ -47,7 +51,7 @@ async function markCompletedPaidBookings() {
   }
 
   const result = await Booking.updateMany(
-    { _id: { $in: ids }, status: "PAID" },
+    { _id: { $in: ids }, status: "PAID", cancellationLock: { $in: ["", null] }, cancellationRefundStatus: { $in: ["NOT_STARTED", null] } },
     {
       $set: {
         status: "COMPLETED",
@@ -305,38 +309,115 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
       booking.stripePaymentIntentId || ""
     ).trim()
 
-    let refund = null
+    let cancellationClaim
 
-    if (booking.status === "PAID" && paymentIntentId) {
+    try {
+      cancellationClaim = await claimBookingCancellation(Booking, booking)
+    } catch (claimError) {
+      console.warn("BOOKING_CANCELLATION_CLAIM_BLOCKED", {
+        bookingId: String(booking._id),
+        reason: claimError?.message || ""
+      })
+
+      return res.status(409).json({
+        ok: false,
+        error: "BOOKING_CANCELLATION_RECONCILIATION_REQUIRED"
+      })
+    }
+
+    const { lock } = cancellationClaim
+    let refund = null
+    let cancelledBooking = null
+
+    if (booking.status === "PAID") {
       if (!stripe) {
-        return res.status(500).json({
+        await Booking.updateOne(
+          {
+            _id: booking._id,
+            cancellationLock: lock,
+            cancellationRefundStatus: "PENDING"
+          },
+          {
+            $set: {
+              cancellationRefundStatus: "RECONCILIATION_REQUIRED"
+            }
+          }
+        )
+
+        return res.status(503).json({
           ok: false,
-          error: "STRIPE_NOT_CONFIGURED"
+          error: "BOOKING_CANCELLATION_RECONCILIATION_REQUIRED"
         })
       }
 
-      refund = await stripe.refunds.create(
-        {
-          payment_intent: paymentIntentId,
-          metadata: {
-            bookingId: String(booking._id),
-            travelerEmail: bookingTravelerEmail
+      try {
+        refund = await stripe.refunds.create(
+          {
+            payment_intent: paymentIntentId,
+            metadata: {
+              bookingId: String(booking._id),
+              travelerEmail: bookingTravelerEmail
+            }
+          },
+          {
+            idempotencyKey: `booking-cancel-refund-${booking._id}`
           }
-        },
-        {
-          idempotencyKey: `booking-cancel-refund-${booking._id}`
-        }
+        )
+      } catch (refundError) {
+        console.error("BOOKING_REFUND_RECONCILIATION_REQUIRED", {
+          bookingId: String(booking._id),
+          code: refundError?.code || ""
+        })
+
+        await Booking.updateOne(
+          {
+            _id: booking._id,
+            cancellationLock: lock,
+            cancellationRefundStatus: "PENDING"
+          },
+          {
+            $set: {
+              cancellationRefundStatus: "RECONCILIATION_REQUIRED"
+            }
+          }
+        )
+
+        return res.status(503).json({
+          ok: false,
+          error: "BOOKING_CANCELLATION_RECONCILIATION_REQUIRED"
+        })
+      }
+
+      await recordBookingCancellationRefund(
+        Booking,
+        booking._id,
+        lock,
+        refund
+      )
+
+      if (refund.status !== "succeeded") {
+        return res.status(202).json({
+          ok: false,
+          error: "BOOKING_REFUND_RECONCILIATION_REQUIRED"
+        })
+      }
+
+      cancelledBooking = await finalizeBookingCancellation(
+        Booking,
+        booking._id,
+        lock
+      )
+    } else {
+      cancelledBooking = await finalizeUnpaidBookingCancellation(
+        Booking,
+        booking._id,
+        lock
       )
     }
 
-    booking.status = "CANCELLED"
-    booking.cancelledAt = new Date()
-
-    await booking.save()
-
     return res.status(200).json({
       ok: true,
-      booking,
+      booking: cancelledBooking,
       refund: refund
         ? {
             id: refund.id,

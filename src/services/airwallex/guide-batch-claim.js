@@ -32,6 +32,8 @@ export async function claimAirwallexGuideBatch(
           _id: { $in: batch.bookingIds },
           guideId: String(guideId),
           status: "COMPLETED",
+            cancellationLock: { $in: ["", null] },
+            cancellationRefundStatus: { $in: ["NOT_STARTED", null] },
           guidePayoutStatus: "READY",
             stripeFundingStatus: "RECEIVED",
             guidePayoutEligibleAt: { $lte: now },
