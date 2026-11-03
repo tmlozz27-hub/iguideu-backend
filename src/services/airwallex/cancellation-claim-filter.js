@@ -5,6 +5,7 @@ export function buildCancellationClaimFilter(bookingId, travelerEmail) {
     status: { $in: ["PENDING", "CONFIRMED", "PAID"] },
     cancellationLock: { $in: ["", null] },
     paymentIntentCreationLock: { $in: ["", null] },
+    stripeFundingStatus: { $in: ["NOT_STARTED", null] },
     cancellationRefundStatus: { $in: ["NOT_STARTED", null] },
     airwallexPayoutStatus: { $in: ["NOT_STARTED", null] },
     guidePayoutStatus: { $nin: ["PROCESSING", "TRANSFERRED"] },
