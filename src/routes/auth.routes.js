@@ -446,7 +446,7 @@ router.post("/login", loginLimiter, async (req, res) => {
 });
 
 
-async function sendRegistrationWelcome({ email, name, role }) {
+async function sendRegistrationWelcome({ email, name, role, language = "es" }) {
   if (!process.env.RESEND_API_KEY) {
     console.error("WELCOME_EMAIL_NOT_CONFIGURED");
     return;
@@ -455,16 +455,82 @@ async function sendRegistrationWelcome({ email, name, role }) {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const isGuide = role === "guide";
+    const bankUrl = "https://api.i-guide-u.com/guia/datos-bancarios/";
+    const lang = /^(en|english)([-_]|$)/i.test(
+      String(language).trim()
+    ) ? "en" : "es";
+
     const subject = isGuide
-      ? "Bienvenido a I GUIDE U - Guia"
+      ? (lang === "en"
+          ? "Welcome to I GUIDE U | Your guide profile"
+          : "Bienvenido a I GUIDE U | Tu perfil de guía")
       : "Bienvenido a I GUIDE U - Viajero";
 
-    const text = "Hola " + name + ", bienvenido a I GUIDE U. Tu cuenta de " +
-      (isGuide ? "guia" : "viajero") + " fue creada correctamente." +
-      (isGuide
-        ? "\n\nPara registrar tu cuenta bancaria y recibir tus pagos, ingres├í aqu├¡:\nhttps://api.i-guide-u.com/guia/datos-bancarios/\n\nInici├í sesi├│n con tu cuenta de I GUIDE U."
-        : "");
-
+    const text = isGuide
+      ? (lang === "en"
+          ? [
+              "Welcome to I GUIDE U!",
+              "",
+              "Hello " + name + ",",
+              "",
+              "Your personal tour guide profile has been created successfully.",
+              "",
+              "I GUIDE U connects travelers with personal tour guides worldwide.",
+              "You can showcase your experience, set your rates, and receive booking requests.",
+              "",
+              "How to get started:",
+              "1. Complete your profile, languages, photos, and rates.",
+              "2. Review booking requests and confirm the services you can provide.",
+              "3. Provide the booked service to the traveler.",
+              "4. Register your bank details to receive payouts.",
+              "",
+              "SET UP YOUR BANK DETAILS:",
+              bankUrl,
+              "",
+              "Sign in using your I GUIDE U account.",
+              "For your security, enter your details only on the official form.",
+              "",
+              "I GUIDE U charges a 10% commission. The guide receives 90%.",
+              "Payouts become eligible 48 hours after the service ends, subject to verification.",
+              "",
+              "Official website: https://www.i-guide-u.com/",
+              "",
+              "Never send passwords or banking details by email.",
+              "",
+              "The I GUIDE U Team"
+            ].join("\n")
+          : [
+              "¡Bienvenido a I GUIDE U!",
+              "",
+              "Hola " + name + ",",
+              "",
+              "Tu perfil de guía personal de turismo fue creado correctamente.",
+              "",
+              "I GUIDE U conecta viajeros con guías personales de turismo de todo el mundo.",
+              "Podrás mostrar tu experiencia, establecer tus tarifas y recibir solicitudes de reserva.",
+              "",
+              "¿Cómo comenzar?",
+              "1. Completa tu perfil, idiomas, fotografías y tarifas.",
+              "2. Revisa las solicitudes y confirma las reservas que puedas realizar.",
+              "3. Atiende al viajero según el servicio contratado.",
+              "4. Registra tus datos bancarios para recibir pagos.",
+              "",
+              "CONFIGURAR DATOS BANCARIOS:",
+              bankUrl,
+              "",
+              "Inicia sesión con tu cuenta de I GUIDE U.",
+              "Por seguridad, registra tus datos únicamente en el formulario oficial.",
+              "",
+              "I GUIDE U recibe una comisión del 10%. El 90% corresponde al guía.",
+              "Los pagos son elegibles 48 horas después de finalizar el servicio, sujetos a las verificaciones correspondientes.",
+              "",
+              "Sitio oficial: https://www.i-guide-u.com/",
+              "",
+              "Nunca envíes contraseñas ni datos bancarios por correo electrónico.",
+              "",
+              "Equipo I GUIDE U"
+            ].join("\n"))
+      : "Hola " + name + ", bienvenido a I GUIDE U. Tu cuenta de viajero fue creada correctamente.";
     const result = await resend.emails.send({
       from: process.env.MAIL_FROM || "I GUIDE U <onboarding@resend.dev>",
       to: email,
@@ -484,7 +550,6 @@ async function sendRegistrationWelcome({ email, name, role }) {
     console.error("WELCOME_EMAIL_FAILED", error.message);
   }
 }
-
 router.post("/register", registerLimiter, async (req, res) => {
   try {
     const name = String(req.body?.name || "").trim();
@@ -521,7 +586,12 @@ router.post("/register", registerLimiter, async (req, res) => {
       email,
       role
     });
-  void sendRegistrationWelcome({ email, name, role });
+  void sendRegistrationWelcome({
+      email,
+      name,
+      role,
+      language: String(req.body?.language || req.body?.lang || "es").trim()
+    });
 
     return res.status(201).json({
       ok: true,
