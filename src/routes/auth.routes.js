@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
@@ -535,8 +536,8 @@ async function sendRegistrationWelcome({ email, name, role, language = "es" }) {
       from: process.env.MAIL_FROM || "I GUIDE U <onboarding@resend.dev>",
       to: email,
       subject,
-      text
-    });
+      text,
+      html: isGuide ? readFileSync(new URL(lang === "en" ? "../../email-templates/guide-welcome-en.html" : "../../email-templates/guide-welcome-es.html", import.meta.url), "utf8") : readFileSync(new URL(lang === "en" ? "../../email-templates/traveler-welcome-en.html" : "../../email-templates/traveler-welcome-es.html", import.meta.url), "utf8")});
 
     if (result.error) {
       console.error("WELCOME_EMAIL_FAILED", result.error.message);
