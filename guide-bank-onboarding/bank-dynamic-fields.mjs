@@ -168,13 +168,17 @@ export function renderGuideBankFields(schema, container) {
     const selectedCountry = document.getElementById("bank_country_code")?.value;
     const fieldName = key.split(".").pop();
     const lang = window.guideBankLanguage === "en" ? "en" : "es";
-    const bankIdentifierLabel =
+    const argentinaTaxLabel =
+    selectedCountry === "AR" && fieldName === "personal_id_number"
+      ? (lang === "en" ? "CUIL/CUIT (11 digits)" : "CUIL/CUIT (11 dígitos)")
+      : null;
+  const bankIdentifierLabel =
       selectedCountry === "AR" && fieldName === "cbu"
         ? (lang === "en" ? "CBU (22 digits)" : "CBU (22 dígitos)")
         : selectedCountry === "MX" && fieldName === "clabe"
           ? (lang === "en" ? "CLABE (18 digits)" : "CLABE (18 dígitos)")
           : null;
-    label.textContent = bankIdentifierLabel || (window.guideBankLanguage === "en"
+    label.textContent = argentinaTaxLabel || bankIdentifierLabel || (window.guideBankLanguage === "en"
   ? ({
       account_number: selectedCountry === "AR" ? "CBU (22 digits)" : selectedCountry === "MX" ? "CLABE (18 digits)" : "Bank account number",
       account_name: "Account holder full name",
@@ -208,7 +212,11 @@ export function renderGuideBankFields(schema, container) {
 
         const option = document.createElement("option");
         option.value = value;
-        option.textContent = friendlyValue(value);
+        option.textContent =
+  selectedCountry === "AR" && lang === "es" &&
+  fieldName === "personal_id_type" && value === "INDIVIDUAL_TAX_ID"
+    ? "CUIL/CUIT (persona física)"
+    : friendlyValue(value);
         control.appendChild(option);
       }
     } else {
