@@ -465,7 +465,9 @@ async function sendRegistrationWelcome({ email, name, role, language = "es" }) {
       ? (lang === "en"
           ? "Welcome to I GUIDE U | Your guide profile"
           : "Bienvenido a I GUIDE U | Tu perfil de guía")
-      : "Bienvenido a I GUIDE U - Viajero";
+      : (lang === "en"
+          ? "Welcome to I GUIDE U | Your traveler account"
+          : "Bienvenido a I GUIDE U - Viajero");
 
     const text = isGuide
       ? (lang === "en"
@@ -531,7 +533,9 @@ async function sendRegistrationWelcome({ email, name, role, language = "es" }) {
               "",
               "Equipo I GUIDE U"
             ].join("\n"))
-      : "Hola " + name + ", bienvenido a I GUIDE U. Tu cuenta de viajero fue creada correctamente.";
+      : (lang === "en"
+          ? "Hello " + name + ", welcome to I GUIDE U. Your traveler account has been created successfully."
+          : "Hola " + name + ", bienvenido a I GUIDE U. Tu cuenta de viajero fue creada correctamente.");
     const result = await resend.emails.send({
       from: process.env.MAIL_FROM || "I GUIDE U <onboarding@resend.dev>",
       to: email,
