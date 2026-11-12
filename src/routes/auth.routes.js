@@ -560,6 +560,7 @@ router.post("/register", registerLimiter, async (req, res) => {
     const name = String(req.body?.name || "").trim();
     const email = String(req.body?.email || "").trim().toLowerCase();
     const password = String(req.body?.password || "").trim();
+    if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) { return res.status(400).json({ ok: false, message: "INVALID_EMAIL_FORMAT" }); }
 
     if (!name || !email || !password) {
       return res.status(400).json({ ok: false, message: "NAME_EMAIL_PASSWORD_REQUIRED" });
