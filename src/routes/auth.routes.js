@@ -297,6 +297,118 @@ router.put("/me", requireAuth, async (req, res) => {
   }
 });
 
+router.delete("/me", requireAuth, async (req, res) => {
+  try {
+    if (req.body?.confirmation !== "DELETE MY ACCOUNT") {
+      return res.status(400).json({
+        ok: false,
+        message: "DELETE_CONFIRMATION_REQUIRED"
+      });
+    }
+
+    const email = String(req.user?.email || "").trim().toLowerCase();
+    const db = mongoose.connection?.db;
+
+    if (!email || !db) {
+      return res.status(500).json({
+        ok: false,
+        message: "ACCOUNT_DELETION_ERROR"
+      });
+    }
+
+    const users = db.collection("users");
+    const guides = db.collection("guides");
+    const bookings = db.collection("bookings");
+
+    const user = await users.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        ok: false,
+        message: "USER_NOT_FOUND"
+      });
+    }
+
+    const escapedEmail = email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const emailRegex = new RegExp(`^${escapedEmail}$`, "i");
+
+    const guideFilter = {
+      $or: [
+        { userEmail: emailRegex },
+        { email: emailRegex }
+      ]
+    };
+
+    const guideRecords = await guides.find(guideFilter).toArray();
+
+    const guideIds = [
+      ...new Set(
+        guideRecords.flatMap((guide) =>
+          [
+            String(guide._id),
+            String(guide.guideId || "").trim()
+          ].filter(Boolean)
+        )
+      )
+    ];
+
+    const bookingMatches = [
+      { travelerEmail: emailRegex },
+      { guideEmail: emailRegex },
+      { email: emailRegex }
+    ];
+
+    if (guideIds.length > 0) {
+      bookingMatches.push({
+        guideId: { $in: guideIds }
+      });
+    }
+
+    const existingBooking = await bookings.findOne({
+      $or: bookingMatches
+    });
+
+    if (existingBooking) {
+      return res.status(409).json({
+        ok: false,
+        message: "ACCOUNT_HAS_PENDING_BOOKINGS_OR_PAYMENTS"
+      });
+    }
+
+    await guides.deleteMany(guideFilter);
+
+    const result = await users.deleteOne({
+      _id: user._id,
+      email
+    });
+
+    if (result.deletedCount !== 1) {
+      return res.status(500).json({
+        ok: false,
+        message: "ACCOUNT_DELETION_ERROR"
+      });
+    }
+
+    await db.collection("password_reset_tokens").deleteMany({
+      userId: String(user._id)
+    }).catch((error) => {
+      console.error("DELETE_RESET_TOKENS_ERROR", error?.message);
+    });
+
+    return res.json({
+      ok: true,
+      message: "ACCOUNT_DELETION_REQUESTED"
+    });
+  } catch (error) {
+    console.error("ACCOUNT_DELETION_ERROR", error?.message);
+
+    return res.status(500).json({
+      ok: false,
+      message: "ACCOUNT_DELETION_ERROR"
+    });
+  }
+});
+
 router.post("/apple", appleLimiter, async (req, res) => {
   try {
     const identityToken = req.body?.identityToken;
