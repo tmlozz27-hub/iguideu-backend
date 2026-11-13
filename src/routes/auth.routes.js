@@ -210,25 +210,7 @@ router.post("/google", googleLimiter, async (req, res) => {
     let user = await usersCollection().findOne({ email });
 
     if (!user) {
-      const now = new Date();
-      const result = await usersCollection().insertOne({
-        name,
-        email,
-        password: "",
-        role: "traveler",
-        phone: "",
-        emailVerified: true,
-        emailVerifiedAt: now,
-        createdAt: now,
-        updatedAt: now
-      });
-
-      user = {
-        _id: result.insertedId,
-        name,
-        email,
-        role: "traveler"
-      };
+      return res.status(404).json({ ok: false, message: "REGISTRATION_REQUIRED" });
     }
 
     const sessionToken = makeToken(user);
@@ -458,40 +440,7 @@ router.post("/apple", appleLimiter, async (req, res) => {
     }
 
     if (!user) {
-      if (!verifiedEmail) {
-        return res.status(400).json({ ok: false, message: "APPLE_EMAIL_REQUIRED" });
-      }
-
-      const now = new Date();
-      const nameFromBody = normalizeFullName(fullName);
-      const name = nameFromBody || verifiedEmail;
-
-      const result = await usersCollection().insertOne({
-        name,
-        email: verifiedEmail,
-        appleSub,
-        password: "",
-        role: "traveler",
-        phone: "",
-        emailVerified: true,
-        emailVerifiedAt: now,
-        createdAt: now,
-        updatedAt: now
-      });
-
-      user = {
-        _id: result.insertedId,
-        name,
-        email: verifiedEmail,
-        appleSub,
-        password: "",
-        role: "traveler",
-        phone: "",
-        emailVerified: true,
-        emailVerifiedAt: now,
-        createdAt: now,
-        updatedAt: now
-      };
+      return res.status(404).json({ ok: false, message: "REGISTRATION_REQUIRED" });
     }
 
     const token = makeToken(user);
