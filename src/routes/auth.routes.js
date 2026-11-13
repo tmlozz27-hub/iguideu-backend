@@ -364,16 +364,6 @@ router.delete("/me", requireAuth, async (req, res) => {
       });
     }
 
-    const existingBooking = await bookings.findOne({
-      $or: bookingMatches
-    });
-
-    if (existingBooking) {
-      return res.status(409).json({
-        ok: false,
-        message: "ACCOUNT_HAS_PENDING_BOOKINGS_OR_PAYMENTS"
-      });
-    }
 
     await guides.deleteMany(guideFilter);
 
